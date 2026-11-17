@@ -10,34 +10,23 @@
   <style>
     html, body { background:#000; color:#fff; }
     .card { background:#111827; border:1px solid #1f2937; border-radius:22px; }
+    .card-app { background:#111827; border:1px solid #1f2937; border-radius:22px; }
     .btn { width:100%; padding:14px; border-radius:20px; background:#f59e0b; color:#000; font-weight:900; text-transform:uppercase; font-size:12px; letter-spacing:.04em; }
     .btn-line { width:100%; padding:14px; border-radius:20px; border:1px solid #f59e0b; color:#f59e0b; font-weight:900; text-transform:uppercase; font-size:12px; }
+    .campo { width:100%; padding:14px; border-radius:18px; background:#111827; border:1px solid #1f2937; color:#fff; font-size:16px; outline:none; }
+    .campo:focus { border-color:#f59e0b; }
   </style>
 </head>
 <body class="min-h-screen" style="padding-top:max(16px, env(safe-area-inset-top)); padding-bottom:max(16px, env(safe-area-inset-bottom))">
   <div class="max-w-md mx-auto px-4">
-
-    <!-- entrada -->
-    <section id="login" class="hidden min-h-[80vh] flex flex-col items-center justify-center text-center">
-      <img src="logo.png" class="w-28 h-28 rounded-full p-3 bg-black ring-2 ring-amber-500/50 shadow-[0_0_40px_rgba(245,158,11,0.35)]" alt="">
-      <div class="mt-6 text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em]">Agência</div>
-      <div class="text-3xl font-black text-amber-500 italic uppercase">Promotor Ajudante</div>
-      <p class="text-gray-500 text-xs mt-4 max-w-xs">Entre com o mesmo e-mail que o promotor cadastrou como superior.</p>
-      <button id="btn-entrar" class="btn mt-8 max-w-xs">Entrar com Google</button>
-    </section>
-
-    <!-- app -->
-    <section id="app" class="hidden">
-      <header class="flex items-center justify-between py-4">
-        <div>
-          <div class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] leading-none">Agência</div>
-          <div class="text-2xl font-black text-amber-500 italic uppercase leading-none" id="titulo">Promotores</div>
-        </div>
-        <button id="btn-sair" class="px-3 py-2 rounded-xl border border-gray-700 text-[10px] font-black uppercase text-gray-300">Sair</button>
-      </header>
-      <div id="corpo" class="pb-10"></div>
-    </section>
-
+    <header id="topo" class="hidden flex items-center justify-between py-4">
+      <div>
+        <div class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] leading-none">Agência</div>
+        <div class="text-2xl font-black text-amber-500 italic uppercase leading-none" id="titulo">Promotores</div>
+      </div>
+      <button id="btn-sair" class="px-3 py-2 rounded-xl border border-gray-700 text-[10px] font-black uppercase text-gray-300">Sair</button>
+    </header>
+    <div id="corpo" class="pb-10"></div>
   </div>
   <script src="firebase-config.js"></script>
   <script type="module" src="agencia.js"></script>
