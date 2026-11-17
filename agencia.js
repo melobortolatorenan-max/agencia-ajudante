@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signInWithRedirect, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG);
@@ -419,8 +419,9 @@ document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act, uid = b.dataset.uid;
   if (act === 'google') {
-    try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-    catch (err) { console.error(err); telaEntrar('Não consegui entrar com o Google. Tente de novo.'); }
+    // redirecionamento: não depende de pop-up, que costuma ser bloqueado no celular
+    try { await signInWithRedirect(auth, new GoogleAuthProvider()); }
+    catch (err) { console.error(err); telaEntrar('Não consegui entrar com o Google. Código: ' + (err.code || 'desconhecido')); }
   }
   else if (act === 'ir-criar') telaCriar();
   else if (act === 'ir-entrar') telaEntrar();
