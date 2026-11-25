@@ -39,6 +39,28 @@ function iniciarEscolhaPerfil() {
 }
 iniciarEscolhaPerfil();
 
+// ---------- caixas no estilo do app (no lugar das janelas do navegador) ----------
+function caixa(msg, { confirmar = false } = {}) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'fixed inset-0 z-[400] bg-black/85 flex items-center justify-center p-6';
+    ov.innerHTML = `<div class="w-full max-w-sm card p-6 text-center">
+      <div class="text-amber-500 font-black italic uppercase text-sm mb-2">Agência</div>
+      <p class="text-gray-200 text-sm mb-6">${esc(msg)}</p>
+      <div class="flex gap-2">
+        ${confirmar ? '<button id="cx-nao" class="flex-1 py-3 rounded-xl border border-gray-700 text-gray-300 text-[10px] font-black uppercase">Cancelar</button>' : ''}
+        <button id="cx-sim" class="flex-1 py-3 rounded-xl bg-amber-500 text-black text-[10px] font-black uppercase">OK</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const fechar = (v) => { ov.remove(); resolve(v); };
+    ov.querySelector('#cx-sim').onclick = () => fechar(true);
+    const nao = ov.querySelector('#cx-nao');
+    if (nao) nao.onclick = () => fechar(false);
+  });
+}
+window.alert = (msg) => { caixa(String(msg)); };
+const confirmarTema = (msg) => caixa(msg, { confirmar: true });
+
 // Tamanho do texto (normal ou grande), guardado neste aparelho
 const aplicarTamanhoTexto = () => { document.documentElement.style.fontSize = localStorage.getItem('agencia_texto_grande') === '1' ? '19px' : ''; };
 aplicarTamanhoTexto();
@@ -417,7 +439,7 @@ async function renomear(uid) {
 
 async function remover(uid) {
   const p = promotores.find(x => x.uid === uid); if (!p) return;
-  if (!confirm(`Remover ${p.apelido || p.nome} da sua lista?`)) return;
+  if (!(await confirmarTema(`Remover ${p.apelido || p.nome} da sua lista?`))) return;
   try {
     await deleteDoc(doc(db, 'vinculos', email, 'promotores', uid));
     promotores = promotores.filter(x => x.uid !== uid); telaPrincipal();
@@ -657,7 +679,7 @@ async function reenviarConvite(pe) {
 }
 
 async function removerConvite(pe) {
-  if (!confirm(`Remover o convite enviado para ${pe}?`)) return;
+  if (!(await confirmarTema(`Remover o convite enviado para ${pe}?`))) return;
   try {
     await deleteDoc(doc(db, 'convites', pe, 'pedidos', user.uid));
     await deleteDoc(doc(db, 'agencias', user.uid, 'convites', pe));
@@ -795,7 +817,7 @@ async function compartilharResumo() {
 }
 
 async function excluirConta() {
-  if (!confirm('Excluir sua conta da agência? Os convites e os vínculos com os promotores serão apagados. Essa ação não pode ser desfeita.')) return;
+  if (!(await confirmarTema('Excluir sua conta da agência? Os convites e os vínculos com os promotores serão apagados. Essa ação não pode ser desfeita.'))) return;
   try {
     const conv = await getDocs(collection(db, 'agencias', user.uid, 'convites'));
     for (const c of conv.docs) {
@@ -1088,7 +1110,7 @@ document.addEventListener('click', async (e) => {
     if (user.emailVerified) handleUser(user); else alert('Ainda não confirmado. Confira seu e-mail (inclusive a caixa de spam).');
   }
   else if (act === 'reenviar') { await sendEmailVerification(user).catch(() => {}); alert('E-mail de confirmação reenviado.'); }
-  else if (act === 'sair') { if (confirm('Sair da conta?')) { cache = {}; signOut(auth); } }
+  else if (act === 'sair') { if (await confirmarTema('Sair da conta?')) { cache = {}; signOut(auth); } }
   else if (act === 'novo-convite') telaConvidar();
   else if (act === 'relatorio') abrirRelatorio(uid);
   else if (act === 'rota') abrirRota(uid);
