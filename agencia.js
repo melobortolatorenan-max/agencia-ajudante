@@ -250,7 +250,6 @@ function telaPrincipal() {
       <div class="text-[9px] text-gray-500 font-black uppercase">Marcas da agência</div>
       <div class="text-gray-200 text-sm mt-1">${marcasAgencia().length ? marcasAgencia().map(esc).join(' · ') : 'Nenhuma marca cadastrada. Toque para cadastrar.'}</div>
     </button>
-    <div id="resumo-equipe"></div>
     <div class="card p-4 mb-4">
       <div class="flex items-center justify-between mb-2">
         <div class="text-[9px] text-gray-500 font-black uppercase">Convites enviados</div>
@@ -261,13 +260,13 @@ function telaPrincipal() {
     <div id="lista-promotores"></div>`);
   const campoBusca = $('#busca'); if (campoBusca) campoBusca.addEventListener('input', () => { busca = campoBusca.value; renderListaPromotores(); });
   renderListaPromotores();
-  carregarResumo();
 }
 
 // Resumo da equipe de hoje: visitas feitas, sem visita e saídas, com alerta de quem não registrou visita
 async function carregarResumo() {
-  const box = $('#resumo-equipe'); if (!box || !promotores.length) return;
-  box.innerHTML = '<div class="card p-4 mb-4 text-gray-500 text-xs">Carregando resumo de hoje...</div>';
+  const box = $('#resumo-equipe'); if (!box) return;
+  if (!promotores.length) { box.innerHTML = '<div class="card p-4 text-gray-500 text-xs">Nenhum promotor na equipe ainda.</div>'; return; }
+  box.innerHTML = '<div class="card p-4 text-gray-500 text-xs">Carregando andamento de hoje...</div>';
   const hoje = isoLocal(new Date()), dia = new Date().getDay();
   const linhas = await Promise.all(promotores.map(async p => {
     try {
@@ -284,16 +283,47 @@ async function carregarResumo() {
     } catch (e) { console.error(e); return { p, ok: false }; }
   }));
   const ordenados = linhas.sort((x, y) => (x.p.apelido || x.p.nome || '').localeCompare(y.p.apelido || y.p.nome || '', 'pt-BR'));
-  box.innerHTML = `<div class="card p-4 mb-4">
-    <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Equipe hoje · ${dataBR(hoje)}</div>
-    ${ordenados.map(l => {
-      if (!l.ok) return `<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0"><span class="text-white text-sm font-bold">${esc(l.p.apelido || l.p.nome || 'Promotor')}</span><span class="text-[11px] text-red-400">Erro ao carregar</span></div>`;
-      const alerta = l.previstas > 0 && l.feitas === 0 && l.semVisita === 0;
-      const situacao = alerta
-        ? `<span class="text-red-400 font-black uppercase text-[11px]">Sem visita hoje (${l.previstas} previstas)</span>`
-        : `<span class="text-gray-300 text-[11px]">${l.feitas} de ${l.previstas} visitas · ${l.saidas} un. retiradas${l.semVisita ? ' · ' + l.semVisita + ' sem visita' : ''}</span>`;
-      return `<div class="py-2 border-b border-gray-800 last:border-0"><div class="text-white text-sm font-bold">${esc(l.p.apelido || l.p.nome || 'Promotor')}</div><div class="mt-1">${situacao}</div></div>`;
-    }).join('')}
+  const situacao = (l) => {
+    if (!l.ok) return ['Erro', 'text-red-400 border-red-500/50'];
+    if (l.previstas === 0) return ['Sem dia hoje', 'text-gray-400 border-gray-700'];
+    if (l.feitas === 0 && l.semVisita === 0) return ['Sem visita', 'text-red-400 border-red-500/60'];
+    if (l.feitas + l.semVisita >= l.previstas) return ['Concluído', 'text-black bg-amber-500 border-amber-500'];
+    return ['Em andamento', 'text-amber-500 border-amber-500/60'];
+  };
+  const linhasHtml = ordenados.map((l, i) => {
+    const nome = esc(l.p.apelido || l.p.nome || 'Promotor');
+    const zebra = i % 2 ? 'bg-black/30' : '';
+    if (!l.ok) return `<tr class="${zebra} border-t border-gray-800"><td class="px-4 py-3 text-white font-bold">${nome}</td><td colspan="3" class="px-2 py-3 text-red-400 text-xs">Erro ao carregar</td></tr>`;
+    const [txt, cls] = situacao(l);
+    const pct = l.previstas ? Math.min(100, Math.round((l.feitas + l.semVisita) / l.previstas * 100)) : 0;
+    return `<tr class="${zebra} border-t border-gray-800">
+      <td class="px-4 py-3"><div class="text-white font-bold">${nome}</div><span class="inline-block mt-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase ${cls}">${txt}</span></td>
+      <td class="px-2 py-3 text-center"><div class="text-amber-500 font-black">${l.feitas}<span class="text-gray-500 font-bold"> / ${l.previstas}</span></div><div class="h-1.5 w-16 mx-auto mt-1 rounded bg-gray-800 overflow-hidden"><div class="h-1.5 bg-amber-500" style="width:${pct}%"></div></div></td>
+      <td class="px-2 py-3 text-center font-black ${l.semVisita ? 'text-red-400' : 'text-gray-600'}">${l.semVisita}</td>
+      <td class="px-4 py-3 text-right font-black text-amber-500">${l.saidas}<span class="text-gray-500 font-bold text-[10px]"> un.</span></td>
+    </tr>`;
+  }).join('');
+  const T = ordenados.filter(l => l.ok).reduce((t, l) => ({ f: t.f + l.feitas, p: t.p + l.previstas, s: t.s + l.semVisita, u: t.u + l.saidas }), { f: 0, p: 0, s: 0, u: 0 });
+  const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  box.innerHTML = `<div class="card overflow-hidden">
+    <div class="px-4 pt-4 pb-3 flex items-end justify-between border-b border-amber-500/30">
+      <div><div class="text-[9px] text-gray-500 font-black uppercase">Andamento do dia</div><div class="text-amber-500 font-black italic uppercase text-xl">${dataBR(hoje)}</div></div>
+      <div class="text-[10px] text-gray-500">Atualizado ${hora}</div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-[9px] text-gray-500 font-black uppercase">
+          <th class="px-4 py-2 text-left">Promotor</th><th class="px-2 py-2 text-center">Visitas</th><th class="px-2 py-2 text-center">Sem visita</th><th class="px-4 py-2 text-right">Retirado</th>
+        </tr></thead>
+        <tbody>${linhasHtml}</tbody>
+        <tfoot><tr class="border-t-2 border-amber-500 bg-amber-500/10">
+          <td class="px-4 py-3 text-amber-500 font-black uppercase text-[11px]">Total</td>
+          <td class="px-2 py-3 text-center text-amber-500 font-black">${T.f} / ${T.p}</td>
+          <td class="px-2 py-3 text-center text-red-400 font-black">${T.s}</td>
+          <td class="px-4 py-3 text-right text-amber-500 font-black">${T.u} un.</td>
+        </tr></tfoot>
+      </table>
+    </div>
   </div>`;
 }
 
@@ -458,6 +488,32 @@ function iniciarVoz() {
   r.start();
 }
 
+// ---------- configurações e equipe de hoje ----------
+function telaConfig() {
+  $('#topo').classList.remove('hidden');
+  $('#titulo').textContent = 'Configurações';
+  tela(`
+    <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+    <button data-act="equipe-hoje" class="card p-4 mb-3 w-full text-left block">
+      <div class="text-white font-black italic uppercase text-sm">Equipe hoje</div>
+      <div class="text-gray-500 text-[11px] mt-1">Andamento de cada promotor no dia</div>
+    </button>
+    <button data-act="marcas-agencia" class="card p-4 mb-3 w-full text-left block">
+      <div class="text-white font-black italic uppercase text-sm">Marcas da agência</div>
+      <div class="text-gray-500 text-[11px] mt-1">Cadastrar as marcas que a agência representa</div>
+    </button>`);
+}
+
+function telaEquipeHoje() {
+  $('#topo').classList.remove('hidden');
+  $('#titulo').textContent = 'Equipe hoje';
+  tela(`
+    <button data-act="config" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Configurações</button>
+    <div id="resumo-equipe"><div class="card p-4 text-gray-500 text-xs">Carregando...</div></div>
+    <button data-act="equipe-hoje" class="btn-line mt-4">Atualizar</button>`);
+  carregarResumo();
+}
+
 // ---------- relatório ----------
 async function abrirRelatorio(uid) {
   const p = promotores.find(x => x.uid === uid); if (!p) return;
@@ -610,6 +666,8 @@ document.addEventListener('click', async (e) => {
   else if (act === 'renomear') renomear(uid);
   else if (act === 'planilha') baixarPlanilha(uid);
   else if (act === 'remover') remover(uid);
+  else if (act === 'config') telaConfig();
+  else if (act === 'equipe-hoje') telaEquipeHoje();
   else if (act === 'marcas-agencia') telaMarcasAgencia();
   else if (act === 'marcas-promotor') telaMarcasPromotor(uid);
   else if (act === 'rem-marca') salvarMarcasAgencia(marcasAgencia().filter(m => m !== b.dataset.nome));
