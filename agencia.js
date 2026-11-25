@@ -39,6 +39,128 @@ function iniciarEscolhaPerfil() {
 }
 iniciarEscolhaPerfil();
 
+// ---------- agenda do relatório semanal (dia e horário escolhidos pela agência) ----------
+const DIAS_AGENDA = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+const relatorioAgenda = () => (perfil && perfil.relatorioAgenda) || { dia: 1, hora: '08:00' };
+function momentoAgenda(dataBase, ag) {
+  const [h, m] = String(ag.hora || '08:00').split(':').map(Number);
+  const d = new Date(dataBase); d.setHours(h, m, 0, 0);
+  return d;
+}
+// Última vez que o relatório foi liberado (null = ainda não liberado)
+function ultimaLiberacao(ag = relatorioAgenda()) {
+  const agora = new Date();
+  for (let k = 0; k <= 7; k++) {
+    const d = new Date(agora); d.setDate(agora.getDate() - k);
+    if (d.getDay() === Number(ag.dia)) { const m = momentoAgenda(d, ag); if (m <= agora) return m; }
+  }
+  return null;
+}
+// Próxima liberação a partir de agora
+function proximaLiberacao(ag = relatorioAgenda()) {
+  const agora = new Date();
+  for (let k = 0; k <= 7; k++) {
+    const d = new Date(agora); d.setDate(agora.getDate() + k);
+    if (d.getDay() === Number(ag.dia)) { const m = momentoAgenda(d, ag); if (m > agora) return m; }
+  }
+  return null;
+}
+const fmtQuando = (dt) => dt ? dt.toLocaleString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+
+async function salvarAgenda(e) {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const ag = { dia: Number(f.get('dia')), hora: String(f.get('hora') || '08:00') };
+  try {
+    await updateDoc(doc(db, 'agencias', user.uid), { relatorioAgenda: ag });
+    perfil.relatorioAgenda = ag;
+    telaConfig('relatorios');
+    alert('Dia e horário salvos.');
+  } catch (err) { console.error(err); alert('Não consegui salvar. Tente de novo.'); }
+}
+
+// ---------- downloads: relatório semanal, planilha e informativos (sem e-mail) ----------
+function baixarArquivo(nome, conteudo, tipo) {
+  const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
+  const link = document.createElement('a');
+  link.href = url; link.download = nome;
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function dadosDaEquipe() {
+  const out = [];
+  for (const p of promotores) {
+    try {
+      delete cache[p.uid];
+      const d = await dadosFiltrados(p.uid);
+      out.push({ p, d, nome: p.apelido || p.nome || 'Promotor' });
+    } catch (e) { console.error(e); out.push({ p, d: null, nome: p.apelido || p.nome || 'Promotor' }); }
+  }
+  return out;
+}
+
+async function baixarRelatorioSemanal() {
+  if (!ultimaLiberacao()) return alert('O relatório semanal ainda não está disponível. Próxima liberação: ' + fmtQuando(proximaLiberacao()));
+  const hoje = isoLocal(new Date()), ini = isoLocal(new Date(Date.now() - 6 * 86400000));
+  const dentro = (iso) => !!iso && iso >= ini && iso <= hoje;
+  const equipe = await dadosDaEquipe();
+  const blocos = equipe.filter(e => e.d).map(({ d, nome, p }) => {
+    const sem = resumoDias(d, 7);
+    const previstas = sem.reduce((t, s) => t + s.previstas, 0), feitas = sem.reduce((t, s) => t + s.feitas, 0);
+    const semVisita = d.visitas.filter(v => dentro(v.data) && v.semVisita && !v.adiadaPara);
+    const adiadas = d.visitas.filter(v => dentro(v.data) && v.adiadaPara).length;
+    const porMarca = {};
+    d.vencidos.filter(v => dentro(v.dataRetirada)).forEach(v => { const m = String(v.marcaNome || v.marca || 'Sem marca'); porMarca[m] = (porMarca[m] || 0) + (Number(v.qtd) || 0); });
+    const marcas = (p.marcas || []).join(' · ') || 'Todas';
+    const motivos = semVisita.sort((x, y) => y.data.localeCompare(x.data)).map(v => `<li>${dataBR(v.data)} · <b>${esc(v.lojaNome || 'Loja')}</b>: ${esc(v.motivo || 'sem motivo informado')}</li>`).join('');
+    const marcasHtml = Object.entries(porMarca).map(([m, q]) => `${esc(m)}: ${q} un.`).join('<br>') || '—';
+    return `<tr><td><b>${esc(nome)}</b><br><span class="sub">${esc(marcas)}</span></td>
+      <td class="c">${feitas} / ${previstas}</td><td class="c">${semVisita.length}</td><td class="c">${adiadas}</td><td>${marcasHtml}</td></tr>
+      ${motivos ? `<tr><td colspan="5"><ul class="motivos">${motivos}</ul></td></tr>` : ''}`;
+  }).join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório semanal ${dataBR(ini)} a ${dataBR(hoje)}</title>
+    <style>body{font-family:Arial,sans-serif;color:#111;padding:24px}h1{color:#b45309;font-size:20px;margin:0}p.sub{color:#555;margin:4px 0 16px}
+    table{width:100%;border-collapse:collapse;font-size:13px}th{background:#f59e0b;color:#111;text-align:left;padding:8px}td{border-bottom:1px solid #ddd;padding:8px;vertical-align:top}
+    td.c{text-align:center}.sub{color:#777;font-size:11px}ul.motivos{margin:4px 0 0;padding-left:18px;font-size:12px}</style></head><body>
+    <h1>Relatório semanal da equipe</h1>
+    <p class="sub">${esc((perfil && perfil.nome) || 'Agência')} · ${dataBR(ini)} a ${dataBR(hoje)}</p>
+    <table><thead><tr><th>Promotor e marcas</th><th class="c">Visitas</th><th class="c">Sem visita</th><th class="c">Adiadas</th><th>Retirado por marca</th></tr></thead>
+    <tbody>${blocos || '<tr><td colspan="5">Nenhum promotor vinculado.</td></tr>'}</tbody></table>
+    </body></html>`;
+  baixarArquivo(`Relatorio semanal ${hoje}.html`, html, 'text/html;charset=utf-8');
+}
+
+async function baixarPlanilhaEquipe() {
+  const equipe = await dadosDaEquipe();
+  const linhas = [];
+  for (const { d, nome } of equipe) {
+    if (!d) continue;
+    const nomeLoja = (id) => (d.lojas.find(l => l.id === id) || {}).nome || '';
+    linhas.push([`PROMOTOR: ${nome}`]);
+    linhas.push(['VISITAS'], ['Data', 'Hora', 'Loja', 'Situação']);
+    d.visitas.slice().sort((x, y) => (x.data + (x.hora || '')).localeCompare(y.data + (y.hora || '')))
+      .forEach(v => linhas.push([dataBR(v.data), v.hora || '', v.lojaNome || nomeLoja(v.lojaId), v.adiadaPara ? 'Adiada para ' + dataBR(v.adiadaPara) : (v.semVisita ? 'Sem visita: ' + (v.motivo || '') : (v.extra ? 'Adiada de ' + dataBR(v.adiadaDe) : 'Visitada'))]));
+    linhas.push([], ['SAÍDAS (vencidos retirados)'], ['Data retirada', 'Produto', 'Loja', 'Marca', 'Quantidade', 'Validade']);
+    d.vencidos.forEach(v => linhas.push([dataBR(v.dataRetirada), v.nome, nomeLoja(v.lojaId), v.marcaNome || v.marca || '', v.qtd, dataBR(v.dataVenc)]));
+    linhas.push([], []);
+  }
+  const csv = '\uFEFF' + linhas.map(r => r.map(c => `"${celulaSegura(c).replace(/"/g, '""')}"`).join(';')).join('\n');
+  baixarArquivo(`Planilha equipe ${isoLocal(new Date())}.csv`, csv, 'text/csv;charset=utf-8');
+}
+
+async function baixarInformativos() {
+  const linhas = ['Informativos enviados aos promotores', ''];
+  for (const p of promotores) {
+    linhas.push(`PROMOTOR: ${p.apelido || p.nome || 'Promotor'}`);
+    const lista = (p.comentarios || []).slice().reverse();
+    if (!lista.length) linhas.push('  (nenhum informativo)');
+    lista.forEach(c => linhas.push(`  ${new Date(c.em).toLocaleString('pt-BR')} - ${c.texto}`));
+    linhas.push('');
+  }
+  baixarArquivo(`Informativos ${isoLocal(new Date())}.txt`, '\uFEFF' + linhas.join('\n'), 'text/plain;charset=utf-8');
+}
+
 // ---------- caixas no estilo do app (no lugar das janelas do navegador) ----------
 function caixa(msg, { confirmar = false } = {}) {
   return new Promise(resolve => {
@@ -890,8 +1012,19 @@ function telaConfig(sub) {
     ${item('convites', 'Convites enviados', 'Promotores convidados e situação de cada convite')}
     ${item('marcas-agencia', 'Marcas da agência', 'Cadastrar as marcas que a agência representa')}`;
   else if (configSub === 'relatorios') corpo = `${voltar}${titulo('Relatórios')}
-    <div class="card p-4 mb-3"><div class="text-white font-black italic uppercase text-sm">Relatório semanal</div><div class="text-gray-500 text-[11px] mt-1">Enviado por e-mail toda segunda-feira, às 8h, com a equipe, as lojas sem visita e os motivos.</div></div>
-    <div class="card p-4 mb-3"><div class="text-white font-black italic uppercase text-sm">Backup semanal</div><div class="text-gray-500 text-[11px] mt-1">Planilha completa enviada por e-mail todo domingo, às 9h.</div></div>`;
+    <p class="text-gray-500 text-[11px] mb-4">Os relatórios ficam aqui para baixar. Nada é enviado por e-mail.</p>
+    <div class="card p-4 mb-3">
+      <div class="text-[9px] text-gray-500 font-black uppercase mb-2">Liberar relatório semanal</div>
+      <form id="f-agenda" class="space-y-2">
+        <select name="dia" class="campo">${DIAS_AGENDA.map((n, i) => `<option value="${i}" ${Number(relatorioAgenda().dia) === i ? 'selected' : ''}>${n}</option>`).join('')}</select>
+        <input name="hora" type="time" value="${esc(relatorioAgenda().hora)}" class="campo">
+        <button class="btn">Salvar dia e horário</button>
+      </form>
+      <p class="text-[11px] text-gray-400 mt-3">${ultimaLiberacao() ? 'Disponível desde ' + fmtQuando(ultimaLiberacao()) + '.' : 'Ainda não liberado.'}<br>Próxima liberação: <b class="text-gray-200">${fmtQuando(proximaLiberacao())}</b></p>
+    </div>
+    <button data-act="rel-semanal" class="card p-4 mb-3 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">Relatório semanal</div><div class="text-gray-500 text-[11px] mt-1">Últimos 7 dias da equipe, com motivos e adiadas · baixar em HTML</div></button>
+    <button data-act="rel-planilha" class="card p-4 mb-3 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">Planilha da equipe</div><div class="text-gray-500 text-[11px] mt-1">Visitas e vencidos retirados de todos os promotores · baixar em CSV</div></button>
+    <button data-act="rel-informativos" class="card p-4 mb-3 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">Informativos</div><div class="text-gray-500 text-[11px] mt-1">Histórico de informativos enviados aos promotores · baixar em TXT</div></button>`;
   else if (configSub === 'pref') corpo = `${voltar}${titulo('Preferências e ajuda')}
     ${item('texto-alternar', 'Tamanho do texto', grande ? 'Grande (toque para normal)' : 'Normal (toque para grande)')}
     ${item('contraste-alternar', 'Alto contraste', contraste ? 'Ligado (toque para desligar)' : 'Desligado (toque para ligar)')}
@@ -908,6 +1041,7 @@ function telaConfig(sub) {
     <button data-act="sair" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500 mt-6">Sair da conta</button>
     <p class="text-center text-[10px] text-gray-600 mt-6">Agência · ${VERSAO_AGENCIA}</p>`;
   tela(corpo);
+  ligarForm('f-agenda', salvarAgenda);
 }
 
 function telaEquipeHoje() {
@@ -1119,6 +1253,9 @@ document.addEventListener('click', async (e) => {
   else if (act === 'remover') remover(uid);
   else if (act === 'config') telaConfig('');
   else if (act === 'solicitacoes') telaSolicitacoes();
+  else if (act === 'rel-semanal') baixarRelatorioSemanal();
+  else if (act === 'rel-planilha') baixarPlanilhaEquipe();
+  else if (act === 'rel-informativos') baixarInformativos();
   else if (act === 'ativar-notif') ativarNotificacoes();
   else if (act === 'sol-aprovar') responderSolicitacao(b.dataset.id, 'aprovada');
   else if (act === 'sol-recusar') responderSolicitacao(b.dataset.id, 'recusada');
