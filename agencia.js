@@ -167,7 +167,7 @@ function telaConvidar(msg = '', valor = '') {
   tela(`
     ${convites.length ? '<button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-4">← Voltar</button>' : ''}
     <div class="text-2xl font-black text-amber-500 italic uppercase mb-1">Convidar promotor</div>
-    <p class="text-gray-500 text-xs mb-4">Informe o e-mail de pelo menos um promotor. Ele recebe o convite no app e precisa aceitar. O convite vale 7 dias.</p>
+    <p class="text-gray-500 text-xs mb-4">Informe o e-mail de pelo menos um promotor. Ele recebe o convite no app e precisa aceitar. O convite vale 15 dias.</p>
     ${erroBox(msg)}
     <form id="f-convidar" class="space-y-3">
       <textarea name="emails" rows="4" class="campo" placeholder="Um e-mail por linha" required>${esc(valor)}</textarea>
@@ -184,7 +184,7 @@ async function enviarConvites(e) {
   if (!lista.length) return telaConvidar('Informe pelo menos um e-mail de promotor.', texto);
   const invalidos = lista.filter(x => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x) || x === email);
   if (invalidos.length) return telaConvidar('E-mail inválido ou da própria agência: ' + invalidos.join(', '), lista.join('\n'));
-  const agora = new Date(), expira = new Date(agora.getTime() + 7 * 86400000);
+  const agora = new Date(), expira = new Date(agora.getTime() + 15 * 86400000);
   try {
     for (const pe of lista) {
       await setDoc(doc(db, 'convites', pe, 'pedidos', user.uid), {
@@ -248,9 +248,10 @@ function telaPrincipal() {
 // Resumo da equipe de hoje: visitas feitas, sem visita e saídas, com alerta de quem não registrou visita
 async function carregarResumo() {
   const box = $('#resumo-equipe'); if (!box) return;
-  if (!promotores.length) { box.innerHTML = '<div class="card p-4 text-gray-500 text-xs">Nenhum promotor na equipe ainda.</div>'; return; }
-  box.innerHTML = '<div class="card p-4 text-gray-500 text-xs">Carregando andamento de hoje...</div>';
+  if (!promotores.length) { box.innerHTML = '<div class="card p-4 text-gray-500 text-xs">Nenhum promotor na equipe ainda.</div>'; ultimoResumo = null; return; }
+  box.innerHTML = `<div class="card p-4 text-gray-500 text-xs">Carregando andamento de hoje: <span id="progresso-carr">0</span> de ${promotores.length}...</div>`;
   const hoje = isoLocal(new Date()), dia = new Date().getDay();
+  let prontos = 0;
   const linhas = await Promise.all(promotores.map(async p => {
     try {
       delete cache[p.uid];
@@ -262,10 +263,14 @@ async function carregarResumo() {
       const feitas = new Set(d.visitas.filter(v => v.data === hoje && !v.semVisita && !v.extra).map(v => v.lojaId)).size;
       const semVisita = d.visitas.filter(v => v.data === hoje && v.semVisita).length;
       const saidas = d.vencidos.filter(v => v.dataRetirada === hoje).reduce((t, v) => t + (Number(v.qtd) || 0), 0);
-      return { p, ok: true, previstas, feitas, semVisita, saidas };
+      const semana = resumoDias(d, 7);
+      const semF = semana.reduce((t, s) => t + s.feitas, 0), semP = semana.reduce((t, s) => t + s.previstas, 0);
+      return { p, ok: true, previstas, feitas, semVisita, saidas, semF, semP };
     } catch (e) { console.error(e); return { p, ok: false }; }
+    finally { prontos++; const c = $('#progresso-carr'); if (c) c.textContent = prontos; }
   }));
   const ordenados = linhas.sort((x, y) => (x.p.apelido || x.p.nome || '').localeCompare(y.p.apelido || y.p.nome || '', 'pt-BR'));
+  ultimoResumo = { hoje, ordenados };
   const situacao = (l) => {
     if (!l.ok) return ['Erro', 'text-red-400 border-red-500/50'];
     if (l.previstas === 0) return ['Sem dia hoje', 'text-gray-400 border-gray-700'];
@@ -288,7 +293,8 @@ async function carregarResumo() {
   }).join('');
   const T = ordenados.filter(l => l.ok).reduce((t, l) => ({ f: t.f + l.feitas, p: t.p + l.previstas, s: t.s + l.semVisita, u: t.u + l.saidas }), { f: 0, p: 0, s: 0, u: 0 });
   const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  box.innerHTML = `<div class="card overflow-hidden">
+  const rank = rankingDe(ordenados);
+  box.innerHTML = `<div class="card overflow-hidden mb-4">
     <div class="px-4 pt-4 pb-3 flex items-end justify-between border-b border-amber-500/30">
       <div><div class="text-[9px] text-gray-500 font-black uppercase">Andamento do dia</div><div class="text-amber-500 font-black italic uppercase text-xl">${dataBR(hoje)}</div></div>
       <div class="text-[10px] text-gray-500">Atualizado ${hora}</div>
@@ -307,6 +313,13 @@ async function carregarResumo() {
         </tr></tfoot>
       </table>
     </div>
+  </div>
+  <div class="card p-4">
+    <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Ranking · últimos 7 dias</div>
+    ${rank.map((r, i) => `<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+      <span class="text-gray-200 text-sm"><span class="text-amber-500 font-black">${i + 1}º</span> ${esc(r.nome)}</span>
+      <span class="text-xs"><span class="text-amber-500 font-black">${r.pct}%</span> <span class="text-gray-500">${r.f} de ${r.p}</span></span>
+    </div>`).join('') || '<div class="text-gray-500 text-xs">Sem dados na semana.</div>'}
   </div>`;
 }
 
@@ -483,7 +496,7 @@ function telaConvites() {
     const cor = st === 'aceito' ? 'text-green-400' : (st === 'pendente' ? 'text-amber-500' : 'text-red-400');
     return `<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
       <span class="text-gray-200 text-sm">${esc(c.promotorEmail)}</span>
-      <span class="text-[10px] font-black uppercase ${cor}">${esc(st)}</span></div>`;
+      <span class="text-[10px] font-black uppercase ${cor}">${esc(st)}</span>${st === 'expirado' ? `<button data-act="reenviar-convite" data-email="${esc(c.promotorEmail)}" class="ml-2 text-amber-500 text-[10px] font-black uppercase">Reenviar</button>` : ''}${st === 'pendente' ? `<button data-act="remover-convite" data-email="${esc(c.promotorEmail)}" class="ml-2 text-red-500 text-[10px] font-black uppercase">Remover</button>` : ''}</div>`;
   }).join('');
   tela(`
     <button data-act="config" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Configurações</button>
@@ -494,6 +507,100 @@ function telaConvites() {
       </div>
       ${linhasConvites || '<div class="text-gray-500 text-xs">Nenhum convite enviado.</div>'}
     </div>`);
+}
+
+// ---------- apoio: dias, ranking, marcas e PDF ----------
+let ultimoResumo = null;
+
+// Visitas previstas e feitas dos últimos n dias
+function resumoDias(d, n) {
+  const hoje = new Date(), out = [];
+  for (let k = n - 1; k >= 0; k--) {
+    const dt = new Date(hoje); dt.setDate(hoje.getDate() - k);
+    const iso = isoLocal(dt), w = dt.getDay();
+    const previstas = new Set([
+      ...d.lojas.filter(l => diasDaLoja(l).includes(w)).map(l => l.id),
+      ...d.visitas.filter(v => v.extra && v.data === iso).map(v => v.lojaId),
+    ]).size;
+    const feitas = new Set(d.visitas.filter(v => v.data === iso && !v.semVisita && !v.extra).map(v => v.lojaId)).size;
+    out.push({ iso, previstas, feitas });
+  }
+  return out;
+}
+
+// Ranking da semana por percentual de cumprimento
+function rankingDe(ordenados) {
+  return ordenados.filter(l => l.ok).map(l => ({
+    nome: l.p.apelido || l.p.nome || 'Promotor',
+    f: l.semF, p: l.semP,
+    pct: l.semP ? Math.round(l.semF / l.semP * 100) : 0,
+  })).sort((x, y) => y.pct - x.pct || y.f - x.f);
+}
+
+// Vencidos retirados por marca e mês (últimos 6 meses)
+function vencidosPorMarcaHtml(d) {
+  const mapa = {};
+  d.vencidos.forEach(v => {
+    const marca = String(v.marcaNome || v.marca || 'Sem marca').trim();
+    const mes = String(v.dataRetirada || '').slice(0, 7);
+    if (!mes) return;
+    mapa[marca] = mapa[marca] || {};
+    mapa[marca][mes] = (mapa[marca][mes] || 0) + (Number(v.qtd) || 0);
+  });
+  const marcas = Object.keys(mapa).sort((x, y) => x.localeCompare(y, 'pt-BR'));
+  if (!marcas.length) return '<div class="text-gray-500 text-xs">Nenhum vencido retirado ainda.</div>';
+  return marcas.map(m => {
+    const meses = Object.entries(mapa[m]).sort((x, y) => y[0].localeCompare(x[0])).slice(0, 6);
+    return `<div class="mb-3"><div class="text-amber-500 font-black uppercase text-sm mb-1">${esc(m)}</div>
+      ${meses.map(([mes, q]) => `<div class="flex justify-between text-xs py-1 border-b border-gray-800 last:border-0"><span class="text-gray-400">${esc(mes.split('-').reverse().join('/'))}</span><span class="text-gray-200 font-bold">${q} un.</span></div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function reenviarConvite(pe) {
+  const agora = new Date(), expira = new Date(agora.getTime() + 15 * 86400000);
+  try {
+    await setDoc(doc(db, 'convites', pe, 'pedidos', user.uid), {
+      agenciaUid: user.uid, agenciaNome: perfil.nome, agenciaEmail: email, promotorEmail: pe,
+      status: 'pendente', criadoEm: agora, expiraEm: expira,
+    });
+    await setDoc(doc(db, 'agencias', user.uid, 'convites', pe), { promotorEmail: pe, status: 'pendente', criadoEm: agora, expiraEm: expira });
+    await carregarConvites();
+    telaConvites();
+  } catch (err) { console.error(err); alert('Não consegui reenviar o convite. Tente de novo.'); }
+}
+
+async function removerConvite(pe) {
+  if (!confirm(`Remover o convite enviado para ${pe}?`)) return;
+  try {
+    await deleteDoc(doc(db, 'convites', pe, 'pedidos', user.uid));
+    await deleteDoc(doc(db, 'agencias', user.uid, 'convites', pe));
+    await carregarConvites();
+    telaConvites();
+  } catch (err) { console.error(err); alert('Não consegui remover o convite.'); }
+}
+
+function imprimirEquipe() {
+  if (!ultimoResumo) return alert('Aguarde o carregamento da equipe.');
+  const { hoje, ordenados } = ultimoResumo;
+  const ok = ordenados.filter(l => l.ok);
+  const T = ok.reduce((t, l) => ({ f: t.f + l.feitas, p: t.p + l.previstas, s: t.s + l.semVisita, u: t.u + l.saidas }), { f: 0, p: 0, s: 0, u: 0 });
+  const linhas = ok.map(l => `<tr><td>${esc(l.p.apelido || l.p.nome || 'Promotor')}</td><td style="text-align:center">${l.feitas} / ${l.previstas}</td><td style="text-align:center">${l.semVisita}</td><td style="text-align:right">${l.saidas} un.</td></tr>`).join('');
+  const rank = rankingDe(ordenados).map((r, i) => `<tr><td>${i + 1}º ${esc(r.nome)}</td><td style="text-align:center">${r.f} de ${r.p}</td><td style="text-align:right">${r.pct}%</td></tr>`).join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Equipe ${dataBR(hoje)}</title>
+    <style>body{font-family:Arial,sans-serif;color:#111;padding:20px}h1{font-size:18px;margin:0 0 4px;color:#b45309}h2{font-size:13px;margin:22px 0 6px;color:#b45309;text-transform:uppercase}
+    p{font-size:12px;color:#555;margin:0}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}th,td{border-bottom:1px solid #ddd;padding:6px;text-align:left}
+    th{background:#f59e0b;color:#111;font-size:11px;text-transform:uppercase}tfoot td{border-top:2px solid #f59e0b;font-weight:bold;background:#fef3c7}</style></head><body>
+    <h1>Equipe hoje · ${dataBR(hoje)}</h1><p>${esc(perfil && perfil.nome ? perfil.nome : 'Agência')}</p>
+    <table><thead><tr><th>Promotor</th><th style="text-align:center">Visitas</th><th style="text-align:center">Sem visita</th><th style="text-align:right">Retirado</th></tr></thead>
+    <tbody>${linhas || '<tr><td colspan="4">Nenhum promotor.</td></tr>'}</tbody>
+    <tfoot><tr><td>Total</td><td style="text-align:center">${T.f} / ${T.p}</td><td style="text-align:center">${T.s}</td><td style="text-align:right">${T.u} un.</td></tr></tfoot></table>
+    <h2>Ranking · últimos 7 dias</h2>
+    <table><thead><tr><th>Promotor</th><th style="text-align:center">Visitas</th><th style="text-align:right">Cumprimento</th></tr></thead><tbody>${rank || '<tr><td colspan="3">Sem dados.</td></tr>'}</tbody></table>
+    </body></html>`;
+  const j = window.open('', '_blank');
+  if (!j) return alert('Permita abrir janelas para gerar o PDF.');
+  j.document.write(html); j.document.close(); j.focus(); setTimeout(() => j.print(), 300);
 }
 
 // ---------- configurações e equipe de hoje ----------
@@ -522,7 +629,7 @@ function telaEquipeHoje() {
   tela(`
     <button data-act="config" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Configurações</button>
     <div id="resumo-equipe"><div class="card p-4 text-gray-500 text-xs">Carregando...</div></div>
-    <button data-act="equipe-hoje" class="btn-line mt-4">Atualizar</button>`);
+    <div class="flex gap-2 mt-4"><button data-act="equipe-hoje" class="btn-line">Atualizar</button><button data-act="imprimir-equipe" class="btn">Salvar em PDF</button></div>`);
   carregarResumo();
 }
 
@@ -534,6 +641,7 @@ async function abrirRelatorio(uid) {
   tela('<p class="text-gray-500 text-sm">Carregando...</p>');
   try {
     const d = await dadosFiltrados(uid);
+    const semana = resumoDias(d, 7);
     const todas = [...new Set(d.lojas.flatMap(l => (l.marcas || []).map(m => String(m.nome).trim())).filter(Boolean))];
     const marcas = (p.marcas && p.marcas.length) ? p.marcas : todas;
     const grupos = marcas.map(m => ({ marca: m, lojas: d.lojas.filter(l => (l.marcas || []).some(x => norm(x.nome) === norm(m))) }));
@@ -556,12 +664,22 @@ async function abrirRelatorio(uid) {
           </div>`).join('') || '<div class="text-gray-500 text-xs">Nenhuma marca</div>'}
       </div>
       <div class="card p-4 mb-3">
-        <div class="text-[9px] text-gray-500 font-black uppercase mb-2">Comentário ao promotor</div>
-        ${p.comentario ? `<p class="text-gray-400 text-xs mb-1">Último comentário:</p><p class="text-gray-200 text-sm mb-3">${esc(p.comentario)}</p>` : '<p class="text-gray-500 text-xs mb-3">Nenhum comentário enviado ainda.</p>'}
+        <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Últimos 7 dias</div>
+        <div class="flex items-end gap-1 h-14">${semana.map(s => `<div class="flex-1 rounded-t bg-amber-500" style="height:${s.previstas ? Math.max(6, Math.round(s.feitas / s.previstas * 100)) : 4}%;opacity:${s.previstas ? 1 : 0.25}"></div>`).join('')}</div>
+        <div class="flex gap-1 mt-1">${semana.map(s => `<div class="flex-1 text-center text-[8px] text-gray-500">${s.iso.slice(8)}</div>`).join('')}</div>
+        <div class="text-[10px] text-gray-500 mt-2">${semana.reduce((t, s) => t + s.feitas, 0)} de ${semana.reduce((t, s) => t + s.previstas, 0)} visitas na semana</div>
+      </div>
+      <div class="card p-4 mb-3">
+        <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Vencidos por marca e mês</div>
+        ${vencidosPorMarcaHtml(d)}
+      </div>
+      <div class="card p-4 mb-3">
+        <div class="text-[9px] text-gray-500 font-black uppercase mb-2">Informativo ao promotor</div>
+        ${(p.comentarios || []).length ? `<div class="mb-3">${(p.comentarios || []).slice(-5).reverse().map(c => `<div class="py-2 border-b border-gray-800 last:border-0"><div class="text-[10px] text-gray-500">${esc(new Date(c.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))}</div><div class="text-gray-200 text-sm">${esc(c.texto)}</div></div>`).join('')}</div>` : '<p class="text-gray-500 text-xs mb-3">Nenhum informativo enviado ainda.</p>'}
         ${p.respostaPromotor ? `<p class="text-amber-500 text-[10px] font-black uppercase mb-1">Resposta do promotor</p><p class="text-gray-200 text-sm mb-3">${esc(p.respostaPromotor)}</p>` : ''}
         <form id="f-comentario" class="space-y-2">
-          <textarea name="texto" rows="3" maxlength="500" class="campo" placeholder="Escreva um comentário sobre o relatório"></textarea>
-          <button class="btn-line">Enviar comentário</button>
+          <textarea name="texto" rows="3" maxlength="500" class="campo" placeholder="Escreva um informativo para o promotor"></textarea>
+          <button class="btn-line">Enviar informativo</button>
         </form>
       </div>
       <button data-act="rota" data-uid="${esc(uid)}" class="btn">Ver rota</button>`);
@@ -572,13 +690,14 @@ async function abrirRelatorio(uid) {
 async function salvarComentario(e, uid) {
   e.preventDefault();
   const texto = String(new FormData(e.target).get('texto') || '').trim().slice(0, 500);
-  if (!texto) return alert('Escreva o comentário antes de enviar.');
+  if (!texto) return alert('Escreva o informativo antes de enviar.');
   const p = promotores.find(x => x.uid === uid); if (!p) return;
+  const historico = [...(p.comentarios || []), { texto, em: new Date().toISOString() }].slice(-50);
   try {
-    await updateDoc(doc(db, 'vinculos', email, 'promotores', uid), { comentario: texto, comentarioEm: new Date() });
-    p.comentario = texto;
+    await updateDoc(doc(db, 'vinculos', email, 'promotores', uid), { comentario: texto, comentarioEm: new Date(), comentarios: historico });
+    p.comentario = texto; p.comentarios = historico;
     abrirRelatorio(uid);
-  } catch (err) { console.error(err); alert('Não consegui enviar o comentário. Tente de novo.'); }
+  } catch (err) { console.error(err); alert('Não consegui enviar o informativo. Tente de novo.'); }
 }
 
 // ---------- rota em calendário ----------
@@ -681,6 +800,9 @@ document.addEventListener('click', async (e) => {
   else if (act === 'config') telaConfig();
   else if (act === 'equipe-hoje') telaEquipeHoje();
   else if (act === 'convites') telaConvites();
+  else if (act === 'imprimir-equipe') imprimirEquipe();
+  else if (act === 'reenviar-convite') reenviarConvite(b.dataset.email);
+  else if (act === 'remover-convite') removerConvite(b.dataset.email);
   else if (act === 'marcas-agencia') telaMarcasAgencia();
   else if (act === 'marcas-promotor') telaMarcasPromotor(uid);
   else if (act === 'rem-marca') salvarMarcasAgencia(marcasAgencia().filter(m => m !== b.dataset.nome));
