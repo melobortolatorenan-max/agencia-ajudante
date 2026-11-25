@@ -629,7 +629,8 @@ function telaConfig() {
     <button data-act="marcas-agencia" class="card p-4 mb-3 w-full text-left block">
       <div class="text-white font-black italic uppercase text-sm">Marcas da agência</div>
       <div class="text-gray-500 text-[11px] mt-1">Cadastrar as marcas que a agência representa</div>
-    </button>`);
+    </button>
+    <button data-act="sair" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500 mt-6">Sair da conta</button>`);
 }
 
 function telaEquipeHoje() {
@@ -783,7 +784,6 @@ async function baixarPlanilha(uid) {
 }
 
 // ---------- ações ----------
-$('#btn-sair').addEventListener('click', () => { cache = {}; signOut(auth); });
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act, uid = b.dataset.uid;
@@ -799,7 +799,7 @@ document.addEventListener('click', async (e) => {
     if (user.emailVerified) handleUser(user); else alert('Ainda não confirmado. Confira seu e-mail (inclusive a caixa de spam).');
   }
   else if (act === 'reenviar') { await sendEmailVerification(user).catch(() => {}); alert('E-mail de confirmação reenviado.'); }
-  else if (act === 'sair') { cache = {}; signOut(auth); }
+  else if (act === 'sair') { if (confirm('Sair da conta?')) { cache = {}; signOut(auth); } }
   else if (act === 'novo-convite') telaConvidar();
   else if (act === 'relatorio') abrirRelatorio(uid);
   else if (act === 'rota') abrirRota(uid);
