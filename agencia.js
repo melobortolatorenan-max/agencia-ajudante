@@ -16,6 +16,7 @@ const dataDe = (ts) => (ts && ts.toDate) ? ts.toDate() : (ts instanceof Date ? t
 const soNumeros = (t) => String(t || '').replace(/\D/g, '');
 const diasDaLoja = (l) => Array.isArray(l.diasVisita) ? l.diasVisita : (typeof l.diaVisita === 'number' ? [l.diaVisita] : []);
 const norm = (t) => String(t || '').trim().toLowerCase();
+const celulaSegura = (v) => { const s = String(v ?? ''); return /^[=+\-@]/.test(s) ? "'" + s : s; };
 const ufOptions = (sel) => UFS.map(u => `<option value="${u}" ${u === sel ? 'selected' : ''}>${u}</option>`).join('');
 
 let user = null, perfil = null, email = null, promotores = [], convites = [], atual = null, mes = new Date(), cache = {}, criando = false;
@@ -65,8 +66,7 @@ function telaEntrar(msg = '') {
       <div class="mt-6 text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em]">Agência</div>
       <div class="text-3xl font-black text-amber-500 italic uppercase">Promotor Ajudante</div>
       <div class="mt-6 w-full">${erroBox(msg)}</div>
-      <button data-act="google" class="btn mt-2">Entrar com Google</button>
-      <div class="text-gray-600 text-xs my-4">ou</div>
+      <div class="mt-2"></div>
       <form id="f-entrar" class="w-full space-y-3 text-left">
         <input name="email" type="email" placeholder="E-mail" class="campo" required>
         <input name="senha" type="password" placeholder="Senha" class="campo" required>
@@ -239,6 +239,7 @@ function telaPrincipal() {
       <span class="text-[10px] font-black uppercase ${cor}">${esc(st)}</span></div>`;
   }).join('');
   tela(`
+    <div id="resumo-equipe"></div>
     <div class="card p-4 mb-4">
       <div class="flex items-center justify-between mb-2">
         <div class="text-[9px] text-gray-500 font-black uppercase">Convites enviados</div>
@@ -248,6 +249,40 @@ function telaPrincipal() {
     </div>
     <div id="lista-promotores"></div>`);
   renderListaPromotores();
+  carregarResumo();
+}
+
+// Resumo da equipe de hoje: visitas feitas, sem visita e saídas, com alerta de quem não registrou visita
+async function carregarResumo() {
+  const box = $('#resumo-equipe'); if (!box || !promotores.length) return;
+  box.innerHTML = '<div class="card p-4 mb-4 text-gray-500 text-xs">Carregando resumo de hoje...</div>';
+  const hoje = isoLocal(new Date()), dia = new Date().getDay();
+  const linhas = await Promise.all(promotores.map(async p => {
+    try {
+      delete cache[p.uid];
+      const d = await dadosDo(p.uid);
+      const previstas = new Set([
+        ...d.lojas.filter(l => diasDaLoja(l).includes(dia)).map(l => l.id),
+        ...d.visitas.filter(v => v.extra && v.data === hoje).map(v => v.lojaId),
+      ]).size;
+      const feitas = new Set(d.visitas.filter(v => v.data === hoje && !v.semVisita && !v.extra).map(v => v.lojaId)).size;
+      const semVisita = d.visitas.filter(v => v.data === hoje && v.semVisita).length;
+      const saidas = d.vencidos.filter(v => v.dataRetirada === hoje).reduce((t, v) => t + (Number(v.qtd) || 0), 0);
+      return { p, ok: true, previstas, feitas, semVisita, saidas };
+    } catch (e) { console.error(e); return { p, ok: false }; }
+  }));
+  const ordenados = linhas.sort((x, y) => (x.p.apelido || x.p.nome || '').localeCompare(y.p.apelido || y.p.nome || '', 'pt-BR'));
+  box.innerHTML = `<div class="card p-4 mb-4">
+    <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Equipe hoje · ${dataBR(hoje)}</div>
+    ${ordenados.map(l => {
+      if (!l.ok) return `<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0"><span class="text-white text-sm font-bold">${esc(l.p.apelido || l.p.nome || 'Promotor')}</span><span class="text-[11px] text-red-400">Erro ao carregar</span></div>`;
+      const alerta = l.previstas > 0 && l.feitas === 0 && l.semVisita === 0;
+      const situacao = alerta
+        ? `<span class="text-red-400 font-black uppercase text-[11px]">Sem visita hoje (${l.previstas} previstas)</span>`
+        : `<span class="text-gray-300 text-[11px]">${l.feitas} de ${l.previstas} visitas · ${l.saidas} un. retiradas${l.semVisita ? ' · ' + l.semVisita + ' sem visita' : ''}</span>`;
+      return `<div class="py-2 border-b border-gray-800 last:border-0"><div class="text-white text-sm font-bold">${esc(l.p.apelido || l.p.nome || 'Promotor')}</div><div class="mt-1">${situacao}</div></div>`;
+    }).join('')}
+  </div>`;
 }
 
 function renderListaPromotores() {
@@ -337,8 +372,30 @@ async function abrirRelatorio(uid) {
               </div>`).join('') : '<div class="text-gray-500 text-xs mt-1">Nenhuma loja com esta marca</div>'}
           </div>`).join('') || '<div class="text-gray-500 text-xs">Nenhuma marca</div>'}
       </div>
+      <div class="card p-4 mb-3">
+        <div class="text-[9px] text-gray-500 font-black uppercase mb-2">Comentário ao promotor</div>
+        ${p.comentario ? `<p class="text-gray-400 text-xs mb-1">Último comentário:</p><p class="text-gray-200 text-sm mb-3">${esc(p.comentario)}</p>` : '<p class="text-gray-500 text-xs mb-3">Nenhum comentário enviado ainda.</p>'}
+        ${p.respostaPromotor ? `<p class="text-amber-500 text-[10px] font-black uppercase mb-1">Resposta do promotor</p><p class="text-gray-200 text-sm mb-3">${esc(p.respostaPromotor)}</p>` : ''}
+        <form id="f-comentario" class="space-y-2">
+          <textarea name="texto" rows="3" maxlength="500" class="campo" placeholder="Escreva um comentário sobre o relatório"></textarea>
+          <button class="btn-line">Enviar comentário</button>
+        </form>
+      </div>
       <button data-act="rota" data-uid="${esc(uid)}" class="btn">Ver rota</button>`);
+    ligarForm('f-comentario', (e) => salvarComentario(e, uid));
   } catch (e) { console.error(e); tela('<p class="text-red-400 text-sm">Não consegui carregar o relatório.</p>'); }
+}
+
+async function salvarComentario(e, uid) {
+  e.preventDefault();
+  const texto = String(new FormData(e.target).get('texto') || '').trim().slice(0, 500);
+  if (!texto) return alert('Escreva o comentário antes de enviar.');
+  const p = promotores.find(x => x.uid === uid); if (!p) return;
+  try {
+    await updateDoc(doc(db, 'vinculos', email, 'promotores', uid), { comentario: texto, comentarioEm: new Date() });
+    p.comentario = texto;
+    abrirRelatorio(uid);
+  } catch (err) { console.error(err); alert('Não consegui enviar o comentário. Tente de novo.'); }
 }
 
 // ---------- rota em calendário ----------
@@ -405,11 +462,12 @@ async function baixarPlanilha(uid) {
     d.produtos.forEach(x => linhas.push([dataBR(x.dia), x.nome, nomeLoja(x.lojaId)]));
     linhas.push([], ['SAÍDAS (vencidos retirados)'], ['Data retirada', 'Produto', 'Loja', 'Quantidade', 'Validade', 'Motivo']);
     d.vencidos.forEach(x => linhas.push([dataBR(x.dataRetirada), x.nome, nomeLoja(x.lojaId), x.qtd, dataBR(x.dataVenc), x.motivo || '']));
-    const csv = '\uFEFF' + linhas.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+    const csv = '\uFEFF' + linhas.map(r => r.map(c => `"${celulaSegura(c).replace(/"/g, '""')}"`).join(';')).join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     a.download = `Relatorio - ${p.apelido || p.nome} - ${isoLocal(new Date())}.csv`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   } catch (e) { console.error(e); alert('Não consegui gerar a planilha.'); }
 }
 
