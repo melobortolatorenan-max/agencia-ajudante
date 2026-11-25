@@ -765,36 +765,46 @@ function mostrarTutorial() {
 }
 
 // ---------- configurações e equipe de hoje ----------
-function telaConfig() {
+let configSub = '';
+function telaConfig(sub) {
+  if (sub !== undefined) configSub = sub;
   $('#topo').classList.remove('hidden');
   $('#titulo').textContent = 'Configurações';
   const grande = localStorage.getItem('agencia_texto_grande') === '1';
   const contraste = localStorage.getItem('agencia_contraste') === '1';
   const compacta = localStorage.getItem('agencia_compacta') === '1';
-  const item = (act, titulo, sub) => `<button data-act="${act}" class="card p-4 mb-3 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">${titulo}</div><div class="text-gray-500 text-[11px] mt-1">${sub}</div></button>`;
-  const sec = (t) => `<div class="text-[9px] text-gray-500 font-black uppercase mt-5 mb-2">${t}</div>`;
-  tela(`
-    <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
-    ${sec('Equipe')}
+  const item = (act, titulo, desc) => `<button data-act="${act}" class="card p-4 mb-3 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">${titulo}</div><div class="text-gray-500 text-[11px] mt-1">${desc}</div></button>`;
+  const grupo = (sub, titulo, desc) => `<button data-act="config-sub" data-sub="${sub}" class="card p-4 mb-3 w-full text-left flex items-center justify-between"><div><div class="text-white font-black italic uppercase text-sm">${titulo}</div><div class="text-gray-500 text-[11px] mt-1">${desc}</div></div><i data-lucide="chevron-right" class="w-5 h-5 text-amber-500"></i></button>`;
+  const voltar = `<button data-act="config" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Configurações</button>`;
+  const titulo = (t) => `<h2 class="text-amber-500 font-black italic uppercase text-lg mb-3">${t}</h2>`;
+  let corpo;
+  if (configSub === 'conta') corpo = `${voltar}${titulo('Minha conta')}
+    <div class="card p-4 mb-3"><div class="text-[9px] text-gray-500 font-black uppercase mb-1">Agência</div><div class="text-white font-black italic uppercase text-sm truncate">${esc((perfil && perfil.nome) || 'Sem nome')}</div><div class="text-gray-400 text-xs truncate">${esc(email || '')}</div></div>
+    ${item('plano', 'Plano de assinatura', 'Em breve')}
+    ${item('redefinir-senha', 'Redefinir senha', 'Receba um link no e-mail para trocar a senha')}
+    <button data-act="excluir-conta" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500 mt-4">Excluir minha conta</button>`;
+  else if (configSub === 'equipe') corpo = `${voltar}${titulo('Equipe')}
     ${item('equipe-hoje', 'Equipe hoje', 'Andamento de cada promotor no dia')}
     ${item('convites', 'Convites enviados', 'Promotores convidados e situação de cada convite')}
-    ${item('marcas-agencia', 'Marcas da agência', 'Cadastrar as marcas que a agência representa')}
-    ${sec('Conta')}
-    ${item('redefinir-senha', 'Redefinir senha', 'Receba um link no e-mail para trocar a senha')}
-    ${item('plano', 'Plano de assinatura', 'Em breve')}
-    ${sec('Preferências')}
+    ${item('marcas-agencia', 'Marcas da agência', 'Cadastrar as marcas que a agência representa')}`;
+  else if (configSub === 'relatorios') corpo = `${voltar}${titulo('Relatórios')}
+    <div class="card p-4 mb-3"><div class="text-white font-black italic uppercase text-sm">Relatório semanal</div><div class="text-gray-500 text-[11px] mt-1">Enviado por e-mail toda segunda-feira, às 8h, com a equipe, as lojas sem visita e os motivos.</div></div>
+    <div class="card p-4 mb-3"><div class="text-white font-black italic uppercase text-sm">Backup semanal</div><div class="text-gray-500 text-[11px] mt-1">Planilha completa enviada por e-mail todo domingo, às 9h.</div></div>`;
+  else if (configSub === 'pref') corpo = `${voltar}${titulo('Preferências e ajuda')}
     ${item('texto-alternar', 'Tamanho do texto', grande ? 'Grande (toque para normal)' : 'Normal (toque para grande)')}
     ${item('contraste-alternar', 'Alto contraste', contraste ? 'Ligado (toque para desligar)' : 'Desligado (toque para ligar)')}
     ${item('compacta-alternar', 'Lista compacta', compacta ? 'Ligada (toque para desligar)' : 'Desligada (toque para ligar)')}
     ${item('instalar', 'Aplicativo', 'Como instalar na tela inicial do celular')}
-    ${sec('Ajuda')}
     <a href="mailto:melobortolato.renan@gmail.com?subject=Agência%20-%20Promotor%20Ajudante" class="card p-4 mb-3 block"><div class="text-white font-black italic uppercase text-sm">Central de atendimento</div><div class="text-gray-500 text-[11px] mt-1">Fale com a Melo Staff por e-mail</div></a>
     ${item('termos', 'Termos de uso', 'Regras de uso do aplicativo')}
-    ${item('privacidade', 'Política de privacidade', 'Como os dados são tratados')}
-    ${sec('Zona de risco')}
-    <button data-act="excluir-conta" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500">Excluir minha conta</button>
-    <button data-act="sair" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500 mt-3">Sair da conta</button>
-    <p class="text-center text-[10px] text-gray-600 mt-6">Agência · ${VERSAO_AGENCIA}</p>`);
+    ${item('privacidade', 'Política de privacidade', 'Como os dados são tratados')}`;
+  else corpo = `${grupo('conta', 'Minha conta', 'Nome, plano, senha e exclusão')}
+    ${grupo('equipe', 'Equipe', 'Equipe hoje, convites e marcas')}
+    ${grupo('relatorios', 'Relatórios', 'Relatório semanal e backup')}
+    ${grupo('pref', 'Preferências e ajuda', 'Texto, contraste, lista, aplicativo e suporte')}
+    <button data-act="sair" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500 mt-6">Sair da conta</button>
+    <p class="text-center text-[10px] text-gray-600 mt-6">Agência · ${VERSAO_AGENCIA}</p>`;
+  tela(corpo);
 }
 
 function telaEquipeHoje() {
@@ -1004,7 +1014,8 @@ document.addEventListener('click', async (e) => {
   else if (act === 'renomear') renomear(uid);
   else if (act === 'planilha') baixarPlanilha(uid);
   else if (act === 'remover') remover(uid);
-  else if (act === 'config') telaConfig();
+  else if (act === 'config') telaConfig('');
+  else if (act === 'config-sub') telaConfig(b.dataset.sub);
   else if (act === 'equipe-hoje') telaEquipeHoje();
   else if (act === 'convites') telaConvites();
   else if (act === 'redefinir-senha') resetSenha(email);
