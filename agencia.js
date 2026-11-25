@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithRedirect, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, deleteUser, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -274,10 +274,12 @@ onAuthStateChanged(auth, handleUser);
 
 // ---------- tela principal ----------
 function telaPrincipal() {
+  ouvirSolicitacoes();
   $('#topo').classList.remove('hidden');
   $('#titulo').textContent = 'Promotores';
   atual = null;
   tela(`
+    ${solicitacoesAg.length ? `<button data-act="solicitacoes" class="card p-4 mb-4 w-full text-left block" style="border:1px solid rgba(245,158,11,0.6)"><div class="text-amber-500 font-black italic uppercase text-sm">Solicitações pendentes · ${solicitacoesAg.length}</div><div class="text-gray-400 text-[11px] mt-1">Sem visita, adiar visita ou dias de visita aguardando sua aprovação</div></button>` : ''}
     <div class="flex gap-2 mb-4">
       <div class="flex-1 relative">
         <i data-lucide="search" class="w-4 h-4 absolute text-gray-500" style="left:16px;top:50%;transform:translateY(-50%)"></i>
@@ -684,6 +686,50 @@ function imprimirEquipe() {
   j.document.write(html); j.document.close(); j.focus(); setTimeout(() => j.print(), 300);
 }
 
+// ---------- solicitações de aprovação (sem visita, adiar, dias de visita) ----------
+let solicitacoesAg = [];
+let unsubSol = null;
+function ouvirSolicitacoes() {
+  if (unsubSol || !email) return;
+  unsubSol = onSnapshot(query(collection(db, 'solicitacoes'), where('aprovadores', 'array-contains', email)), (snap) => {
+    solicitacoesAg = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => s.status === 'pendente');
+    if ($('#titulo').textContent === 'Promotores') telaPrincipal();
+    else if ($('#titulo').textContent === 'Solicitações') telaSolicitacoes();
+  }, (e) => console.warn('solicitacoes:', e));
+}
+
+function telaSolicitacoes() {
+  $('#topo').classList.remove('hidden');
+  $('#titulo').textContent = 'Solicitações';
+  const tipos = { sem_visita: 'Sem visita hoje', adiar: 'Adiar visita', dias: 'Dias de visita' };
+  const diasNomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const detalhe = (s) => {
+    const pl = s.payload || {};
+    if (s.tipo === 'sem_visita') return `${pl.data ? dataBR(pl.data) : ''}${pl.hora ? ' às ' + esc(pl.hora) : ''}<br><b class="text-gray-100">${esc(pl.motivo || 'Sem motivo informado')}</b>`;
+    if (s.tipo === 'adiar') return `De ${dataBR(pl.de)} para <b class="text-gray-100">${dataBR(pl.para)}</b>`;
+    return `Dias: <b class="text-gray-100">${(pl.dias || []).map(d => diasNomes[d]).join(', ') || 'nenhum'}</b>`;
+  };
+  const lista = solicitacoesAg.map(s => `<div class="card p-4 mb-3">
+      <div class="text-[9px] text-gray-500 font-black uppercase">${esc(s.promotorNome || 'Promotor')} · ${tipos[s.tipo] || esc(s.tipo)}</div>
+      <div class="text-white font-black italic uppercase text-sm mt-1">${esc(s.lojaNome || 'Loja')}</div>
+      <div class="text-gray-400 text-xs mt-1">${detalhe(s)}</div>
+      <div class="flex gap-2 mt-3">
+        <button data-act="sol-recusar" data-id="${esc(s.id)}" class="flex-1 py-2 rounded-xl border border-red-900/60 text-red-500 text-[10px] font-black uppercase">Recusar</button>
+        <button data-act="sol-aprovar" data-id="${esc(s.id)}" class="flex-1 py-2 rounded-xl bg-amber-500 text-black text-[10px] font-black uppercase">Aprovar</button>
+      </div>
+    </div>`).join('');
+  tela(`<button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+    ${lista || '<p class="text-gray-500 text-sm">Nenhuma solicitação pendente.</p>'}`);
+}
+
+async function responderSolicitacao(id, status) {
+  try {
+    await updateDoc(doc(db, 'solicitacoes', id), { status, respondidoEm: new Date(), respondidoPor: email });
+    solicitacoesAg = solicitacoesAg.filter(x => x.id !== id);
+    telaSolicitacoes();
+  } catch (err) { console.error(err); alert('Não consegui responder agora. Tente de novo.'); }
+}
+
 // ---------- conta: senha, compartilhar e excluir ----------
 async function resetSenha(endereco) {
   if (!endereco) return alert('Não encontrei o e-mail da conta.');
@@ -1015,6 +1061,9 @@ document.addEventListener('click', async (e) => {
   else if (act === 'planilha') baixarPlanilha(uid);
   else if (act === 'remover') remover(uid);
   else if (act === 'config') telaConfig('');
+  else if (act === 'solicitacoes') telaSolicitacoes();
+  else if (act === 'sol-aprovar') responderSolicitacao(b.dataset.id, 'aprovada');
+  else if (act === 'sol-recusar') responderSolicitacao(b.dataset.id, 'recusada');
   else if (act === 'config-sub') telaConfig(b.dataset.sub);
   else if (act === 'equipe-hoje') telaEquipeHoje();
   else if (act === 'convites') telaConvites();
