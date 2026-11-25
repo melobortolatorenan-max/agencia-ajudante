@@ -1,10 +1,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInWithRedirect, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, signInWithRedirect, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, deleteUser, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
-const db = getFirestore(app);
+const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 
 const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -22,6 +22,26 @@ const ufOptions = (sel) => UFS.map(u => `<option value="${u}" ${u === sel ? 'sel
 // Tamanho do texto (normal ou grande), guardado neste aparelho
 const aplicarTamanhoTexto = () => { document.documentElement.style.fontSize = localStorage.getItem('agencia_texto_grande') === '1' ? '19px' : ''; };
 aplicarTamanhoTexto();
+const VERSAO_AGENCIA = 'v1';
+document.documentElement.classList.toggle('contraste', localStorage.getItem('agencia_contraste') === '1');
+document.body.classList.toggle('compacta', localStorage.getItem('agencia_compacta') === '1');
+
+// Faixa no topo quando não há internet
+function atualizarFaixaConexao() {
+  let f = document.getElementById('faixa-agencia');
+  if (!navigator.onLine) {
+    if (!f) {
+      f = document.createElement('div');
+      f.id = 'faixa-agencia';
+      f.className = 'fixed top-0 left-0 right-0 z-[140] bg-red-600 text-white text-[11px] font-black uppercase text-center py-2';
+      f.textContent = 'Sem internet. Mostrando os últimos dados salvos.';
+      document.body.appendChild(f);
+    }
+  } else if (f) f.remove();
+}
+window.addEventListener('online', atualizarFaixaConexao);
+window.addEventListener('offline', atualizarFaixaConexao);
+atualizarFaixaConexao();
 
 let user = null, perfil = null, email = null, promotores = [], convites = [], atual = null, mes = new Date(), cache = {}, criando = false, busca = '';
 
@@ -34,6 +54,10 @@ const msgErro = (e) => {
   if (['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found'].includes(c)) return 'E-mail ou senha incorretos.';
   if (c === 'auth/weak-password') return 'Senha muito fraca (mínimo 6 caracteres).';
   if (c === 'auth/invalid-email') return 'E-mail inválido.';
+  if (c === 'auth/network-request-failed' || c === 'unavailable') return 'Sem conexão. Verifique a internet e tente de novo.';
+  if (c === 'auth/too-many-requests') return 'Muitas tentativas. Aguarde alguns minutos.';
+  if (c === 'permission-denied') return 'Sem permissão. Saia da conta e entre de novo.';
+  if (c === 'auth/requires-recent-login') return 'Por segurança, saia e entre de novo.';
   return 'Não consegui concluir. Tente de novo.';
 };
 
@@ -76,6 +100,7 @@ function telaEntrar(msg = '') {
         <input name="senha" type="password" placeholder="Senha" class="campo" required>
         <button class="btn-line">Entrar com e-mail</button>
       </form>
+      <button data-act="esqueci" class="text-gray-500 text-xs font-black uppercase mt-3">Esqueci a senha</button>
       <button data-act="ir-criar" class="text-amber-500 text-xs font-black uppercase mt-6">Criar conta da agência</button>
     </section>`);
   ligarForm('f-entrar', async (e) => {
@@ -248,6 +273,7 @@ function telaPrincipal() {
     <div id="lista-promotores"></div>`);
   const campoBusca = $('#busca'); if (campoBusca) campoBusca.addEventListener('input', () => { busca = campoBusca.value; renderListaPromotores(); });
   renderListaPromotores();
+  if (user && !localStorage.getItem('agencia_tutorial_visto_' + user.uid)) mostrarTutorial();
 }
 
 // Resumo da equipe de hoje: visitas feitas, sem visita e saídas, com alerta de quem não registrou visita
@@ -366,7 +392,26 @@ async function remover(uid) {
   try {
     await deleteDoc(doc(db, 'vinculos', email, 'promotores', uid));
     promotores = promotores.filter(x => x.uid !== uid); telaPrincipal();
+    desfazerBox(`${p.apelido || p.nome || 'Promotor'} removido.`, async () => {
+      try {
+        const { uid: _uid, ...dados } = p;
+        await setDoc(doc(db, 'vinculos', email, 'promotores', uid), dados);
+        promotores.push(p); telaPrincipal();
+      } catch (err) { console.error(err); alert('Não consegui desfazer. Convide o promotor de novo.'); }
+    });
   } catch (e) { console.error(e); alert('Não consegui remover.'); }
+}
+
+// Aviso com botão Desfazer por alguns segundos
+function desfazerBox(msg, fn) {
+  const antigo = document.getElementById('desfazer-ag'); if (antigo) antigo.remove();
+  const b = document.createElement('div');
+  b.id = 'desfazer-ag';
+  b.className = 'fixed left-4 right-4 bottom-6 mx-auto max-w-sm z-[120] rounded-2xl px-4 py-3 bg-gray-900 border border-amber-500/50 flex items-center justify-between gap-3';
+  b.innerHTML = `<span class="text-[12px] text-gray-200">${esc(msg)}</span><button class="text-amber-500 font-black text-[11px] uppercase">Desfazer</button>`;
+  b.querySelector('button').onclick = () => { b.remove(); fn(); };
+  document.body.appendChild(b);
+  setTimeout(() => b.remove(), 6000);
 }
 
 // ---------- dados do promotor (somente leitura) ----------
@@ -608,29 +653,117 @@ function imprimirEquipe() {
   j.document.write(html); j.document.close(); j.focus(); setTimeout(() => j.print(), 300);
 }
 
+// ---------- conta: senha, compartilhar e excluir ----------
+async function resetSenha(endereco) {
+  if (!endereco) return alert('Não encontrei o e-mail da conta.');
+  try {
+    await sendPasswordResetEmail(auth, endereco);
+    alert('Enviamos o link para trocar a senha. Confira o e-mail (e a caixa de spam).');
+  } catch (err) { console.error(err); alert('Não consegui enviar o link agora. Tente de novo.'); }
+}
+
+function esqueciSenha() {
+  const campo = document.querySelector('#f-entrar input[name="email"]');
+  const endereco = campo ? campo.value.trim() : '';
+  if (!endereco) return alert('Digite seu e-mail no campo acima e toque em "Esqueci a senha" de novo.');
+  resetSenha(endereco);
+}
+
+async function compartilharResumo() {
+  if (!ultimoResumo) return alert('Aguarde o carregamento da equipe.');
+  const { hoje, ordenados } = ultimoResumo;
+  const linhas = ordenados.map(l => {
+    const nome = l.p.apelido || l.p.nome || 'Promotor';
+    return l.ok ? `• ${nome}: ${l.feitas} de ${l.previstas} visitas, ${l.semVisita} sem visita, ${l.saidas} un. retiradas` : `• ${nome}: erro ao carregar`;
+  });
+  const texto = `Equipe hoje · ${dataBR(hoje)}\n${linhas.join('\n')}`;
+  try {
+    if (navigator.share) await navigator.share({ text: texto });
+    else { await navigator.clipboard.writeText(texto); alert('Resumo copiado.'); }
+  } catch (err) { if (err.name !== 'AbortError') alert('Não consegui compartilhar.'); }
+}
+
+async function excluirConta() {
+  if (!confirm('Excluir sua conta da agência? Os convites e os vínculos com os promotores serão apagados. Essa ação não pode ser desfeita.')) return;
+  try {
+    const conv = await getDocs(collection(db, 'agencias', user.uid, 'convites'));
+    for (const c of conv.docs) {
+      await deleteDoc(doc(db, 'convites', c.id, 'pedidos', user.uid)).catch(() => {});
+      await deleteDoc(c.ref).catch(() => {});
+    }
+    const vinc = await getDocs(collection(db, 'vinculos', email, 'promotores'));
+    for (const v of vinc.docs) await deleteDoc(v.ref).catch(() => {});
+    await deleteDoc(doc(db, 'agencias', user.uid));
+    cache = {};
+    await deleteUser(user);
+  } catch (err) {
+    console.error(err);
+    alert(err.code === 'auth/requires-recent-login'
+      ? 'Por segurança, saia da conta, entre de novo e tente excluir outra vez.'
+      : 'Não consegui excluir agora. Tente de novo.');
+  }
+}
+
+// ---------- tutorial de primeiro acesso ----------
+const TUTORIAL = [
+  ['Convide seus promotores', 'Em Configurações, abra Convites enviados e informe o e-mail de cada promotor. Ele recebe o convite no app.'],
+  ['Escolha as marcas de cada um', 'Cadastre as marcas da agência e, em cada promotor, marque só as que ele atende para você.'],
+  ['Acompanhe a equipe', 'A tela inicial mostra os promotores. Em Configurações, veja a Equipe hoje, o ranking e o PDF.'],
+];
+function mostrarTutorial() {
+  if (document.getElementById('tutorial-ag') || !user) return;
+  let i = 0;
+  const ov = document.createElement('div');
+  ov.id = 'tutorial-ag';
+  ov.className = 'fixed inset-0 z-[130] bg-black/95 flex items-center justify-center p-6';
+  const fechar = () => { localStorage.setItem('agencia_tutorial_visto_' + user.uid, '1'); ov.remove(); };
+  const desenha = () => {
+    const [t, s] = TUTORIAL[i], ultimo = i === TUTORIAL.length - 1;
+    ov.innerHTML = `<div class="w-full max-w-sm card p-6 text-center">
+      <div class="text-[9px] text-gray-500 font-black uppercase mb-2">${i + 1} de ${TUTORIAL.length}</div>
+      <div class="text-amber-500 font-black italic uppercase text-xl mb-3">${t}</div>
+      <p class="text-gray-300 text-sm mb-6">${s}</p>
+      <button id="tut-prox" class="btn">${ultimo ? 'Começar' : 'Próximo'}</button>
+      <button id="tut-pular" class="text-gray-500 text-xs font-black uppercase mt-4">Pular</button>
+    </div>`;
+    ov.querySelector('#tut-prox').onclick = () => { if (ultimo) fechar(); else { i++; desenha(); } };
+    ov.querySelector('#tut-pular').onclick = fechar;
+  };
+  desenha();
+  document.body.appendChild(ov);
+}
+
 // ---------- configurações e equipe de hoje ----------
 function telaConfig() {
   $('#topo').classList.remove('hidden');
   $('#titulo').textContent = 'Configurações';
+  const grande = localStorage.getItem('agencia_texto_grande') === '1';
+  const contraste = localStorage.getItem('agencia_contraste') === '1';
+  const compacta = localStorage.getItem('agencia_compacta') === '1';
+  const item = (act, titulo, sub) => `<button data-act="${act}" class="card p-4 mb-3 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">${titulo}</div><div class="text-gray-500 text-[11px] mt-1">${sub}</div></button>`;
+  const sec = (t) => `<div class="text-[9px] text-gray-500 font-black uppercase mt-5 mb-2">${t}</div>`;
   tela(`
     <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
-    <button data-act="texto-alternar" class="card p-4 mb-3 w-full text-left block">
-      <div class="text-white font-black italic uppercase text-sm">Tamanho do texto</div>
-      <div class="text-gray-500 text-[11px] mt-1">${localStorage.getItem('agencia_texto_grande') === '1' ? 'Grande (toque para normal)' : 'Normal (toque para grande)'}</div>
-    </button>
-    <button data-act="convites" class="card p-4 mb-3 w-full text-left block">
-      <div class="text-white font-black italic uppercase text-sm">Convites enviados</div>
-      <div class="text-gray-500 text-[11px] mt-1">Promotores convidados e situação de cada convite</div>
-    </button>
-    <button data-act="equipe-hoje" class="card p-4 mb-3 w-full text-left block">
-      <div class="text-white font-black italic uppercase text-sm">Equipe hoje</div>
-      <div class="text-gray-500 text-[11px] mt-1">Andamento de cada promotor no dia</div>
-    </button>
-    <button data-act="marcas-agencia" class="card p-4 mb-3 w-full text-left block">
-      <div class="text-white font-black italic uppercase text-sm">Marcas da agência</div>
-      <div class="text-gray-500 text-[11px] mt-1">Cadastrar as marcas que a agência representa</div>
-    </button>
-    <button data-act="sair" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500 mt-6">Sair da conta</button>`);
+    ${sec('Equipe')}
+    ${item('equipe-hoje', 'Equipe hoje', 'Andamento de cada promotor no dia')}
+    ${item('convites', 'Convites enviados', 'Promotores convidados e situação de cada convite')}
+    ${item('marcas-agencia', 'Marcas da agência', 'Cadastrar as marcas que a agência representa')}
+    ${sec('Conta')}
+    ${item('redefinir-senha', 'Redefinir senha', 'Receba um link no e-mail para trocar a senha')}
+    ${item('plano', 'Plano de assinatura', 'Em breve')}
+    ${sec('Preferências')}
+    ${item('texto-alternar', 'Tamanho do texto', grande ? 'Grande (toque para normal)' : 'Normal (toque para grande)')}
+    ${item('contraste-alternar', 'Alto contraste', contraste ? 'Ligado (toque para desligar)' : 'Desligado (toque para ligar)')}
+    ${item('compacta-alternar', 'Lista compacta', compacta ? 'Ligada (toque para desligar)' : 'Desligada (toque para ligar)')}
+    ${item('instalar', 'Aplicativo', 'Como instalar na tela inicial do celular')}
+    ${sec('Ajuda')}
+    <a href="mailto:melobortolato.renan@gmail.com?subject=Agência%20-%20Promotor%20Ajudante" class="card p-4 mb-3 block"><div class="text-white font-black italic uppercase text-sm">Central de atendimento</div><div class="text-gray-500 text-[11px] mt-1">Fale com a Melo Staff por e-mail</div></a>
+    ${item('termos', 'Termos de uso', 'Regras de uso do aplicativo')}
+    ${item('privacidade', 'Política de privacidade', 'Como os dados são tratados')}
+    ${sec('Zona de risco')}
+    <button data-act="excluir-conta" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500">Excluir minha conta</button>
+    <button data-act="sair" class="w-full py-4 rounded-xl border border-red-900/50 text-[10px] font-black uppercase text-red-500 mt-3">Sair da conta</button>
+    <p class="text-center text-[10px] text-gray-600 mt-6">Agência · ${VERSAO_AGENCIA}</p>`);
 }
 
 function telaEquipeHoje() {
@@ -639,7 +772,7 @@ function telaEquipeHoje() {
   tela(`
     <button data-act="config" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Configurações</button>
     <div id="resumo-equipe"><div class="card p-4 text-gray-500 text-xs">Carregando...</div></div>
-    <div class="flex gap-2 mt-4"><button data-act="equipe-hoje" class="btn-line">Atualizar</button><button data-act="imprimir-equipe" class="btn">Salvar em PDF</button></div>`);
+    <div class="flex flex-wrap gap-2 mt-4"><button data-act="equipe-hoje" class="btn-line" style="width:auto;flex:1">Atualizar</button><button data-act="compartilhar-resumo" class="btn-line" style="width:auto;flex:1">Compartilhar</button><button data-act="imprimir-equipe" class="btn" style="width:auto;flex:1">Salvar em PDF</button></div>`);
   carregarResumo();
 }
 
@@ -809,6 +942,16 @@ document.addEventListener('click', async (e) => {
   else if (act === 'config') telaConfig();
   else if (act === 'equipe-hoje') telaEquipeHoje();
   else if (act === 'convites') telaConvites();
+  else if (act === 'redefinir-senha') resetSenha(email);
+  else if (act === 'esqueci') esqueciSenha();
+  else if (act === 'plano') alert('Plano de assinatura: em breve.');
+  else if (act === 'contraste-alternar') { const on = localStorage.getItem('agencia_contraste') !== '1'; localStorage.setItem('agencia_contraste', on ? '1' : '0'); document.documentElement.classList.toggle('contraste', on); telaConfig(); }
+  else if (act === 'compacta-alternar') { const on = localStorage.getItem('agencia_compacta') !== '1'; localStorage.setItem('agencia_compacta', on ? '1' : '0'); document.body.classList.toggle('compacta', on); telaConfig(); }
+  else if (act === 'instalar') alert('No Chrome do celular, toque nos três pontos e em "Adicionar à tela inicial".');
+  else if (act === 'termos') window.open('https://promotor-ajudante.vercel.app/termos-de-uso.html', '_blank');
+  else if (act === 'privacidade') window.open('https://promotor-ajudante.vercel.app/politica-de-privacidade.html', '_blank');
+  else if (act === 'excluir-conta') excluirConta();
+  else if (act === 'compartilhar-resumo') compartilharResumo();
   else if (act === 'texto-alternar') { localStorage.setItem('agencia_texto_grande', localStorage.getItem('agencia_texto_grande') === '1' ? '0' : '1'); aplicarTamanhoTexto(); telaConfig(); }
   else if (act === 'imprimir-equipe') imprimirEquipe();
   else if (act === 'reenviar-convite') reenviarConvite(b.dataset.email);
