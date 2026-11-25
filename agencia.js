@@ -19,6 +19,10 @@ const norm = (t) => String(t || '').trim().toLowerCase();
 const celulaSegura = (v) => { const s = String(v ?? ''); return /^[=+\-@]/.test(s) ? "'" + s : s; };
 const ufOptions = (sel) => UFS.map(u => `<option value="${u}" ${u === sel ? 'selected' : ''}>${u}</option>`).join('');
 
+// Tamanho do texto (normal ou grande), guardado neste aparelho
+const aplicarTamanhoTexto = () => { document.documentElement.style.fontSize = localStorage.getItem('agencia_texto_grande') === '1' ? '19px' : ''; };
+aplicarTamanhoTexto();
+
 let user = null, perfil = null, email = null, promotores = [], convites = [], atual = null, mes = new Date(), cache = {}, criando = false, busca = '';
 
 const tela = (html) => { $('#corpo').innerHTML = html; if (window.lucide) lucide.createIcons(); };
@@ -213,6 +217,7 @@ async function handleUser(u) {
   if (porSenha && !u.emailVerified) return telaVerificar();
   const snap = await getDoc(doc(db, 'agencias', u.uid));
   perfil = snap.exists() ? snap.data() : null;
+  const nomeTopo = $('#nome-agencia'); if (nomeTopo) nomeTopo.textContent = (perfil && perfil.nome) || 'Agência';
   if (!perfil) return telaComplemento();
   await carregarConvites();
   const vinc = await getDocs(collection(db, 'vinculos', email, 'promotores'));
@@ -609,6 +614,10 @@ function telaConfig() {
   $('#titulo').textContent = 'Configurações';
   tela(`
     <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+    <button data-act="texto-alternar" class="card p-4 mb-3 w-full text-left block">
+      <div class="text-white font-black italic uppercase text-sm">Tamanho do texto</div>
+      <div class="text-gray-500 text-[11px] mt-1">${localStorage.getItem('agencia_texto_grande') === '1' ? 'Grande (toque para normal)' : 'Normal (toque para grande)'}</div>
+    </button>
     <button data-act="convites" class="card p-4 mb-3 w-full text-left block">
       <div class="text-white font-black italic uppercase text-sm">Convites enviados</div>
       <div class="text-gray-500 text-[11px] mt-1">Promotores convidados e situação de cada convite</div>
@@ -800,6 +809,7 @@ document.addEventListener('click', async (e) => {
   else if (act === 'config') telaConfig();
   else if (act === 'equipe-hoje') telaEquipeHoje();
   else if (act === 'convites') telaConvites();
+  else if (act === 'texto-alternar') { localStorage.setItem('agencia_texto_grande', localStorage.getItem('agencia_texto_grande') === '1' ? '0' : '1'); aplicarTamanhoTexto(); telaConfig(); }
   else if (act === 'imprimir-equipe') imprimirEquipe();
   else if (act === 'reenviar-convite') reenviarConvite(b.dataset.email);
   else if (act === 'remover-convite') removerConvite(b.dataset.email);

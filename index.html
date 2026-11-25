@@ -23,9 +23,12 @@
 <body class="min-h-screen" style="padding-top:max(16px, env(safe-area-inset-top)); padding-bottom:max(16px, env(safe-area-inset-bottom))">
   <div class="max-w-md mx-auto px-4">
     <header id="topo" class="hidden flex items-center justify-between py-4">
-      <div>
-        <div class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] leading-none">Agência</div>
-        <div class="text-2xl font-black text-amber-500 italic uppercase leading-none" id="titulo">Promotores</div>
+      <div class="flex items-center gap-3">
+        <img src="logo.png" alt="" class="w-10 h-10 rounded-full bg-black ring-1 ring-amber-500/40" onerror="this.remove()">
+        <div>
+          <div class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] leading-none" id="nome-agencia">Agência</div>
+          <div class="text-2xl font-black text-amber-500 italic uppercase leading-none" id="titulo">Promotores</div>
+        </div>
       </div>
       <div class="flex items-center gap-2">
         <button data-act="config" aria-label="Configurações" class="p-2 rounded-xl border border-gray-700 text-amber-500"><i data-lucide="settings" class="w-5 h-5"></i></button>
