@@ -288,41 +288,45 @@ async function carregarResumo() {
       delete cache[p.uid];
       const d = await dadosFiltrados(p.uid);
       const previstas = new Set([
-        ...d.lojas.filter(l => diasDaLoja(l).includes(dia)).map(l => l.id),
+        ...d.lojas.filter(l => diasDaLoja(l).includes(dia) && !d.visitas.some(v => v.lojaId === l.id && v.data === hoje && v.adiadaPara)).map(l => l.id),
         ...d.visitas.filter(v => v.extra && v.data === hoje).map(v => v.lojaId),
       ]).size;
       const feitas = new Set(d.visitas.filter(v => v.data === hoje && !v.semVisita && !v.extra).map(v => v.lojaId)).size;
-      const semVisita = d.visitas.filter(v => v.data === hoje && v.semVisita).length;
+      const semVisita = d.visitas.filter(v => v.data === hoje && v.semVisita && !v.adiadaPara).length;
+      const adiadas = new Set(d.visitas.filter(v => v.data === hoje && v.adiadaPara).map(v => v.lojaId)).size;
+      const motivos = d.visitas.filter(v => v.data === hoje && v.semVisita && !v.adiadaPara).map(v => ({ loja: v.lojaNome || '', motivo: v.motivo || '' }));
       const saidas = d.vencidos.filter(v => v.dataRetirada === hoje).reduce((t, v) => t + (Number(v.qtd) || 0), 0);
       const semana = resumoDias(d, 7);
       const semF = semana.reduce((t, s) => t + s.feitas, 0), semP = semana.reduce((t, s) => t + s.previstas, 0);
-      return { p, ok: true, previstas, feitas, semVisita, saidas, semF, semP };
+      return { p, ok: true, previstas, feitas, semVisita, adiadas, motivos, saidas, semF, semP };
     } catch (e) { console.error(e); return { p, ok: false }; }
     finally { prontos++; const c = $('#progresso-carr'); if (c) c.textContent = prontos; }
   }));
   const ordenados = linhas.sort((x, y) => (x.p.apelido || x.p.nome || '').localeCompare(y.p.apelido || y.p.nome || '', 'pt-BR'));
   ultimoResumo = { hoje, ordenados };
+  const resolvidas = (l) => l.feitas + l.semVisita + l.adiadas;
   const situacao = (l) => {
     if (!l.ok) return ['Erro', 'text-red-400 border-red-500/50'];
-    if (l.previstas === 0) return ['Sem dia hoje', 'text-gray-400 border-gray-700'];
-    if (l.feitas === 0 && l.semVisita === 0) return ['Sem visita', 'text-red-400 border-red-500/60'];
-    if (l.feitas + l.semVisita >= l.previstas) return ['Concluído', 'text-black bg-amber-500 border-amber-500'];
+    if (l.previstas === 0 && l.adiadas === 0) return ['Sem dia hoje', 'text-gray-400 border-gray-700'];
+    if (l.feitas === 0 && l.semVisita === 0 && l.adiadas === 0) return ['Sem visita', 'text-red-400 border-red-500/60'];
+    if (resolvidas(l) >= l.previstas) return ['Concluído', 'text-black bg-amber-500 border-amber-500'];
     return ['Em andamento', 'text-amber-500 border-amber-500/60'];
   };
   const linhasHtml = ordenados.map((l, i) => {
     const nome = esc(l.p.apelido || l.p.nome || 'Promotor');
     const zebra = i % 2 ? 'bg-black/30' : '';
-    if (!l.ok) return `<tr class="${zebra} border-t border-gray-800"><td class="px-4 py-3 text-white font-bold">${nome}</td><td colspan="3" class="px-2 py-3 text-red-400 text-xs">Erro ao carregar</td></tr>`;
+    if (!l.ok) return `<tr class="${zebra} border-t border-gray-800"><td class="px-4 py-3 text-white font-bold">${nome}</td><td colspan="4" class="px-2 py-3 text-red-400 text-xs">Erro ao carregar</td></tr>`;
     const [txt, cls] = situacao(l);
-    const pct = l.previstas ? Math.min(100, Math.round((l.feitas + l.semVisita) / l.previstas * 100)) : 0;
+    const pct = l.previstas ? Math.min(100, Math.round(resolvidas(l) / l.previstas * 100)) : 0;
     return `<tr class="${zebra} border-t border-gray-800">
-      <td class="px-4 py-3"><div class="text-white font-bold">${nome}</div><span class="inline-block mt-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase ${cls}">${txt}</span></td>
+      <td class="px-4 py-3"><div class="text-white font-bold">${nome}</div><span class="inline-block mt-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase ${cls}">${txt}</span>${l.motivos.map(m => `<div class="text-[10px] text-gray-400 mt-1">${esc(m.loja || 'Loja')}: <span class="text-gray-300">${esc(m.motivo || 'sem motivo informado')}</span></div>`).join('')}</td>
       <td class="px-2 py-3 text-center"><div class="text-amber-500 font-black">${l.feitas}<span class="text-gray-500 font-bold"> / ${l.previstas}</span></div><div class="h-1.5 w-16 mx-auto mt-1 rounded bg-gray-800 overflow-hidden"><div class="h-1.5 bg-amber-500" style="width:${pct}%"></div></div></td>
       <td class="px-2 py-3 text-center font-black ${l.semVisita ? 'text-red-400' : 'text-gray-600'}">${l.semVisita}</td>
+      <td class="px-2 py-3 text-center font-black ${l.adiadas ? 'text-amber-500' : 'text-gray-600'}">${l.adiadas}</td>
       <td class="px-4 py-3 text-right font-black text-amber-500">${l.saidas}<span class="text-gray-500 font-bold text-[10px]"> un.</span></td>
     </tr>`;
   }).join('');
-  const T = ordenados.filter(l => l.ok).reduce((t, l) => ({ f: t.f + l.feitas, p: t.p + l.previstas, s: t.s + l.semVisita, u: t.u + l.saidas }), { f: 0, p: 0, s: 0, u: 0 });
+  const T = ordenados.filter(l => l.ok).reduce((t, l) => ({ f: t.f + l.feitas, p: t.p + l.previstas, s: t.s + l.semVisita, a: t.a + l.adiadas, u: t.u + l.saidas }), { f: 0, p: 0, s: 0, a: 0, u: 0 });
   const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const rank = rankingDe(ordenados);
   box.innerHTML = `<div class="card overflow-hidden mb-4">
@@ -333,13 +337,14 @@ async function carregarResumo() {
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead><tr class="text-[9px] text-gray-500 font-black uppercase">
-          <th class="px-4 py-2 text-left">Promotor</th><th class="px-2 py-2 text-center">Visitas</th><th class="px-2 py-2 text-center">Sem visita</th><th class="px-4 py-2 text-right">Retirado</th>
+          <th class="px-4 py-2 text-left">Promotor</th><th class="px-2 py-2 text-center">Visitas</th><th class="px-2 py-2 text-center">Sem visita</th><th class="px-2 py-2 text-center">Adiadas</th><th class="px-4 py-2 text-right">Retirado</th>
         </tr></thead>
         <tbody>${linhasHtml}</tbody>
         <tfoot><tr class="border-t-2 border-amber-500 bg-amber-500/10">
           <td class="px-4 py-3 text-amber-500 font-black uppercase text-[11px]">Total</td>
           <td class="px-2 py-3 text-center text-amber-500 font-black">${T.f} / ${T.p}</td>
           <td class="px-2 py-3 text-center text-red-400 font-black">${T.s}</td>
+          <td class="px-2 py-3 text-center text-amber-500 font-black">${T.a}</td>
           <td class="px-4 py-3 text-right text-amber-500 font-black">${T.u} un.</td>
         </tr></tfoot>
       </table>
@@ -569,7 +574,7 @@ function resumoDias(d, n) {
     const dt = new Date(hoje); dt.setDate(hoje.getDate() - k);
     const iso = isoLocal(dt), w = dt.getDay();
     const previstas = new Set([
-      ...d.lojas.filter(l => diasDaLoja(l).includes(w)).map(l => l.id),
+      ...d.lojas.filter(l => diasDaLoja(l).includes(w) && !d.visitas.some(v => v.lojaId === l.id && v.data === iso && v.adiadaPara)).map(l => l.id),
       ...d.visitas.filter(v => v.extra && v.data === iso).map(v => v.lojaId),
     ]).size;
     const feitas = new Set(d.visitas.filter(v => v.data === iso && !v.semVisita && !v.extra).map(v => v.lojaId)).size;
@@ -588,6 +593,13 @@ function rankingDe(ordenados) {
 }
 
 // Vencidos retirados por marca e mês (últimos 6 meses)
+function motivosSemana(d) {
+  const hoje = isoLocal(new Date()), ini = isoLocal(new Date(Date.now() - 6 * 86400000));
+  return d.visitas.filter(v => v.semVisita && !v.adiadaPara && v.data >= ini && v.data <= hoje)
+    .sort((x, y) => y.data.localeCompare(x.data))
+    .map(v => ({ data: v.data, loja: v.lojaNome || '', motivo: v.motivo || '' }));
+}
+
 function vencidosPorMarcaHtml(d) {
   const mapa = {};
   d.vencidos.forEach(v => {
@@ -634,17 +646,17 @@ function imprimirEquipe() {
   if (!ultimoResumo) return alert('Aguarde o carregamento da equipe.');
   const { hoje, ordenados } = ultimoResumo;
   const ok = ordenados.filter(l => l.ok);
-  const T = ok.reduce((t, l) => ({ f: t.f + l.feitas, p: t.p + l.previstas, s: t.s + l.semVisita, u: t.u + l.saidas }), { f: 0, p: 0, s: 0, u: 0 });
-  const linhas = ok.map(l => `<tr><td>${esc(l.p.apelido || l.p.nome || 'Promotor')}</td><td style="text-align:center">${l.feitas} / ${l.previstas}</td><td style="text-align:center">${l.semVisita}</td><td style="text-align:right">${l.saidas} un.</td></tr>`).join('');
+  const T = ok.reduce((t, l) => ({ f: t.f + l.feitas, p: t.p + l.previstas, s: t.s + l.semVisita, a: t.a + l.adiadas, u: t.u + l.saidas }), { f: 0, p: 0, s: 0, a: 0, u: 0 });
+  const linhas = ok.map(l => `<tr><td>${esc(l.p.apelido || l.p.nome || 'Promotor')}</td><td style="text-align:center">${l.feitas} / ${l.previstas}</td><td style="text-align:center">${l.semVisita}</td><td style="text-align:center">${l.adiadas}</td><td style="text-align:right">${l.saidas} un.</td></tr>`).join('');
   const rank = rankingDe(ordenados).map((r, i) => `<tr><td>${i + 1}º ${esc(r.nome)}</td><td style="text-align:center">${r.f} de ${r.p}</td><td style="text-align:right">${r.pct}%</td></tr>`).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Equipe ${dataBR(hoje)}</title>
     <style>body{font-family:Arial,sans-serif;color:#111;padding:20px}h1{font-size:18px;margin:0 0 4px;color:#b45309}h2{font-size:13px;margin:22px 0 6px;color:#b45309;text-transform:uppercase}
     p{font-size:12px;color:#555;margin:0}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}th,td{border-bottom:1px solid #ddd;padding:6px;text-align:left}
     th{background:#f59e0b;color:#111;font-size:11px;text-transform:uppercase}tfoot td{border-top:2px solid #f59e0b;font-weight:bold;background:#fef3c7}</style></head><body>
     <h1>Equipe hoje · ${dataBR(hoje)}</h1><p>${esc(perfil && perfil.nome ? perfil.nome : 'Agência')}</p>
-    <table><thead><tr><th>Promotor</th><th style="text-align:center">Visitas</th><th style="text-align:center">Sem visita</th><th style="text-align:right">Retirado</th></tr></thead>
-    <tbody>${linhas || '<tr><td colspan="4">Nenhum promotor.</td></tr>'}</tbody>
-    <tfoot><tr><td>Total</td><td style="text-align:center">${T.f} / ${T.p}</td><td style="text-align:center">${T.s}</td><td style="text-align:right">${T.u} un.</td></tr></tfoot></table>
+    <table><thead><tr><th>Promotor</th><th style="text-align:center">Visitas</th><th style="text-align:center">Sem visita</th><th style="text-align:center">Adiadas</th><th style="text-align:right">Retirado</th></tr></thead>
+    <tbody>${linhas || '<tr><td colspan="5">Nenhum promotor.</td></tr>'}</tbody>
+    <tfoot><tr><td>Total</td><td style="text-align:center">${T.f} / ${T.p}</td><td style="text-align:center">${T.s}</td><td style="text-align:center">${T.a}</td><td style="text-align:right">${T.u} un.</td></tr></tfoot></table>
     <h2>Ranking · últimos 7 dias</h2>
     <table><thead><tr><th>Promotor</th><th style="text-align:center">Visitas</th><th style="text-align:right">Cumprimento</th></tr></thead><tbody>${rank || '<tr><td colspan="3">Sem dados.</td></tr>'}</tbody></table>
     </body></html>`;
@@ -674,7 +686,7 @@ async function compartilharResumo() {
   const { hoje, ordenados } = ultimoResumo;
   const linhas = ordenados.map(l => {
     const nome = l.p.apelido || l.p.nome || 'Promotor';
-    return l.ok ? `• ${nome}: ${l.feitas} de ${l.previstas} visitas, ${l.semVisita} sem visita, ${l.saidas} un. retiradas` : `• ${nome}: erro ao carregar`;
+    return l.ok ? `• ${nome}: ${l.feitas} de ${l.previstas} visitas, ${l.semVisita} sem visita, ${l.adiadas} adiada(s), ${l.saidas} un. retiradas` : `• ${nome}: erro ao carregar`;
   });
   const texto = `Equipe hoje · ${dataBR(hoje)}\n${linhas.join('\n')}`;
   try {
@@ -784,38 +796,60 @@ async function abrirRelatorio(uid) {
   tela('<p class="text-gray-500 text-sm">Carregando...</p>');
   try {
     const d = await dadosFiltrados(uid);
-    const semana = resumoDias(d, 7);
-    const todas = [...new Set(d.lojas.flatMap(l => (l.marcas || []).map(m => String(m.nome).trim())).filter(Boolean))];
-    const marcas = (p.marcas && p.marcas.length) ? p.marcas : todas;
-    const grupos = marcas.map(m => ({ marca: m, lojas: d.lojas.filter(l => (l.marcas || []).some(x => norm(x.nome) === norm(m))) }));
+    const hoje = isoLocal(new Date());
+    const ini = isoLocal(new Date(Date.now() - 6 * 86400000));
+    const dentro = (iso) => !!iso && iso >= ini && iso <= hoje;
+    const marcasPromotor = (p.marcas && p.marcas.length) ? p.marcas : [...new Set(d.lojas.flatMap(l => (l.marcas || []).map(m => String(m.nome).trim())).filter(Boolean))];
+
+    const lojasOrdenadas = d.lojas.slice().sort((x, y) => (x.nome || '').localeCompare(y.nome || '', 'pt-BR'));
+    const cards = lojasOrdenadas.map(l => {
+      const vs = d.visitas.filter(v => v.lojaId === l.id && dentro(v.data)).sort((x, y) => (y.data + (y.hora || '')).localeCompare(x.data + (x.hora || '')));
+      const feita = vs.find(v => !v.semVisita && !v.adiadaPara && !v.extra);
+      const semV = vs.find(v => v.semVisita && !v.adiadaPara);
+
+      // quantidade retirada por marca do promotor, nesta loja, no período
+      const retirado = {};
+      d.vencidos.filter(x => x.lojaId === l.id && dentro(x.dataRetirada)).forEach(x => {
+        const m = norm(x.marcaNome || x.marca);
+        retirado[m] = (retirado[m] || 0) + (Number(x.qtd) || 0);
+      });
+      const quantidades = marcasPromotor.map(m => `<div class="flex justify-between text-xs py-1 border-b border-gray-800 last:border-0"><span class="text-gray-400">${esc(m)}</span><span class="text-gray-200 font-bold">${retirado[norm(m)] || 0} un.</span></div>`).join('');
+
+      let cor, titulo, corpo;
+      if (feita) {
+        cor = '#22c55e'; titulo = 'Visitada';
+        corpo = `<div class="text-gray-300 text-xs">Visitada em ${dataBR(feita.data)} às ${esc(feita.hora || '')}</div>`;
+      } else if (semV) {
+        cor = '#ef4444'; titulo = 'Não visitada';
+        const prox = proximaDataLoja(l, semV.data);
+        corpo = `<div class="text-gray-300 text-xs">Sem visita informada em ${dataBR(semV.data)}${semV.hora ? ' às ' + esc(semV.hora) : ''}</div>
+          <div class="text-white font-bold text-sm mt-1">${esc(semV.motivo || 'Sem motivo informado')}</div>
+          <div class="text-gray-300 text-xs mt-1">Próxima visita: <b class="text-gray-100">${prox ? dataBR(prox) : 'não definida'}</b></div>`;
+      } else {
+        cor = '#6b7280'; titulo = 'Sem registro';
+        corpo = '<div class="text-gray-500 text-xs">Sem registro de visita no período</div>';
+      }
+      return `<div class="card p-4 mb-3" style="border-left:4px solid ${cor}">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="text-white font-black italic uppercase text-sm">${esc(l.nome)}</div>
+          <span class="text-[9px] font-black uppercase whitespace-nowrap" style="color:${cor}">${titulo}</span>
+        </div>
+        ${corpo}
+        <div class="mt-3">${quantidades || '<div class="text-gray-500 text-xs">Nenhuma marca</div>'}</div>
+      </div>`;
+    }).join('');
+
     tela(`
       <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
-      ${d.semFiltro ? '<div class="card p-3 mb-3 text-amber-500 text-[11px] font-bold">Este promotor ainda não tem marcas escolhidas. Mostrando tudo. Toque na etiqueta para escolher.</div>' : ''}
       <div class="card p-4 mb-3">
         <div class="text-[9px] text-gray-500 font-black uppercase">Promotor</div>
         <div class="text-white font-black text-lg">${esc(p.nome || '')}</div>
+        <div class="text-[9px] text-gray-500 font-black uppercase mt-3">Marcas que atende</div>
+        <div class="text-gray-200 text-sm">${marcasPromotor.map(esc).join(' · ') || 'Nenhuma marca'}</div>
+        <div class="text-[10px] text-gray-500 mt-2">Período: ${dataBR(ini)} a ${dataBR(hoje)}</div>
       </div>
-      <div class="card p-4 mb-3">
-        <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Marcas e lojas que atende</div>
-        ${grupos.map(g => `
-          <div class="mb-4">
-            <div class="text-amber-500 font-black uppercase text-sm">${esc(g.marca)}</div>
-            ${g.lojas.length ? g.lojas.map(l => `
-              <div class="text-gray-200 text-sm mt-1">${esc(l.nome)}
-                <span class="text-gray-500 text-[11px]">· ${diasDaLoja(l).map(i => DIAS[i]).join(', ') || 'sem dias definidos'}</span>
-              </div>`).join('') : '<div class="text-gray-500 text-xs mt-1">Nenhuma loja com esta marca</div>'}
-          </div>`).join('') || '<div class="text-gray-500 text-xs">Nenhuma marca</div>'}
-      </div>
-      <div class="card p-4 mb-3">
-        <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Últimos 7 dias</div>
-        <div class="flex items-end gap-1 h-14">${semana.map(s => `<div class="flex-1 rounded-t bg-amber-500" style="height:${s.previstas ? Math.max(6, Math.round(s.feitas / s.previstas * 100)) : 4}%;opacity:${s.previstas ? 1 : 0.25}"></div>`).join('')}</div>
-        <div class="flex gap-1 mt-1">${semana.map(s => `<div class="flex-1 text-center text-[8px] text-gray-500">${s.iso.slice(8)}</div>`).join('')}</div>
-        <div class="text-[10px] text-gray-500 mt-2">${semana.reduce((t, s) => t + s.feitas, 0)} de ${semana.reduce((t, s) => t + s.previstas, 0)} visitas na semana</div>
-      </div>
-      <div class="card p-4 mb-3">
-        <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Vencidos por marca e mês</div>
-        ${vencidosPorMarcaHtml(d)}
-      </div>
+      ${d.semFiltro ? '<div class="card p-3 mb-3 text-amber-500 text-[11px] font-bold">Este promotor ainda não tem marcas escolhidas. Mostrando tudo. Toque na etiqueta para escolher.</div>' : ''}
+      ${cards || '<div class="card p-4 text-gray-500 text-xs mb-3">Nenhuma loja vinculada a essas marcas.</div>'}
       <div class="card p-4 mb-3">
         <div class="text-[9px] text-gray-500 font-black uppercase mb-2">Informativo ao promotor</div>
         ${(p.comentarios || []).length ? `<div class="mb-3">${(p.comentarios || []).slice(-5).reverse().map(c => `<div class="py-2 border-b border-gray-800 last:border-0"><div class="text-[10px] text-gray-500">${esc(new Date(c.em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))}</div><div class="text-gray-200 text-sm">${esc(c.texto)}</div></div>`).join('')}</div>` : '<p class="text-gray-500 text-xs mb-3">Nenhum informativo enviado ainda.</p>'}
@@ -828,6 +862,18 @@ async function abrirRelatorio(uid) {
       <button data-act="rota" data-uid="${esc(uid)}" class="btn">Ver rota</button>`);
     ligarForm('f-comentario', (e) => salvarComentario(e, uid));
   } catch (e) { console.error(e); tela('<p class="text-red-400 text-sm">Não consegui carregar o relatório.</p>'); }
+}
+
+// Próxima data de atendimento da loja, depois de uma data
+function proximaDataLoja(l, depoisISO) {
+  const dias = diasDaLoja(l);
+  if (!dias.length || !depoisISO) return null;
+  const [y, m, dd] = depoisISO.split('-').map(Number);
+  for (let k = 1; k <= 21; k++) {
+    const dt = new Date(y, m - 1, dd + k);
+    if (dias.includes(dt.getDay())) return isoLocal(dt);
+  }
+  return null;
 }
 
 async function salvarComentario(e, uid) {
