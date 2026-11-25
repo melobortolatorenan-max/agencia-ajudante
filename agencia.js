@@ -19,7 +19,7 @@ const norm = (t) => String(t || '').trim().toLowerCase();
 const celulaSegura = (v) => { const s = String(v ?? ''); return /^[=+\-@]/.test(s) ? "'" + s : s; };
 const ufOptions = (sel) => UFS.map(u => `<option value="${u}" ${u === sel ? 'selected' : ''}>${u}</option>`).join('');
 
-let user = null, perfil = null, email = null, promotores = [], convites = [], atual = null, mes = new Date(), cache = {}, criando = false;
+let user = null, perfil = null, email = null, promotores = [], convites = [], atual = null, mes = new Date(), cache = {}, criando = false, busca = '';
 
 const tela = (html) => { $('#corpo').innerHTML = html; if (window.lucide) lucide.createIcons(); };
 const erroBox = (msg) => msg ? `<p class="text-red-400 text-sm mb-3">${esc(msg)}</p>` : '';
@@ -239,6 +239,17 @@ function telaPrincipal() {
       <span class="text-[10px] font-black uppercase ${cor}">${esc(st)}</span></div>`;
   }).join('');
   tela(`
+    <div class="flex gap-2 mb-4">
+      <div class="flex-1 relative">
+        <i data-lucide="search" class="w-4 h-4 absolute text-gray-500" style="left:16px;top:50%;transform:translateY(-50%)"></i>
+        <input id="busca" class="campo" style="padding-left:44px" placeholder="Pesquisar promotor" value="${esc(busca)}">
+      </div>
+      <button data-act="voz" class="px-4 rounded-2xl border border-amber-500 text-amber-500" aria-label="Pesquisar por voz"><i data-lucide="mic" class="w-5 h-5"></i></button>
+    </div>
+    <button data-act="marcas-agencia" class="card p-4 mb-4 w-full text-left block">
+      <div class="text-[9px] text-gray-500 font-black uppercase">Marcas da agência</div>
+      <div class="text-gray-200 text-sm mt-1">${marcasAgencia().length ? marcasAgencia().map(esc).join(' · ') : 'Nenhuma marca cadastrada. Toque para cadastrar.'}</div>
+    </button>
     <div id="resumo-equipe"></div>
     <div class="card p-4 mb-4">
       <div class="flex items-center justify-between mb-2">
@@ -248,6 +259,7 @@ function telaPrincipal() {
       ${linhasConvites || '<div class="text-gray-500 text-xs">Nenhum convite enviado.</div>'}
     </div>
     <div id="lista-promotores"></div>`);
+  const campoBusca = $('#busca'); if (campoBusca) campoBusca.addEventListener('input', () => { busca = campoBusca.value; renderListaPromotores(); });
   renderListaPromotores();
   carregarResumo();
 }
@@ -260,7 +272,7 @@ async function carregarResumo() {
   const linhas = await Promise.all(promotores.map(async p => {
     try {
       delete cache[p.uid];
-      const d = await dadosDo(p.uid);
+      const d = await dadosFiltrados(p.uid);
       const previstas = new Set([
         ...d.lojas.filter(l => diasDaLoja(l).includes(dia)).map(l => l.id),
         ...d.visitas.filter(v => v.extra && v.data === hoje).map(v => v.lojaId),
@@ -291,13 +303,14 @@ function renderListaPromotores() {
     box.innerHTML = '<p class="text-gray-500 text-sm">Nenhum promotor aceitou o convite ainda.</p>';
     return;
   }
-  const ordenados = [...promotores].sort((a, b) => (a.apelido || a.nome || '').localeCompare(b.apelido || b.nome || '', 'pt-BR'));
+  const ordenados = promotores.filter(p => norm(p.apelido || p.nome).includes(norm(busca))).sort((a, b) => (a.apelido || a.nome || '').localeCompare(b.apelido || b.nome || '', 'pt-BR'));
   box.innerHTML = ordenados.map(p => `
     <div class="card p-4 mb-3 flex items-center gap-2">
       <button data-act="relatorio" data-uid="${esc(p.uid)}" class="flex-1 text-left">
         <div class="text-white font-black italic uppercase text-sm">${esc(p.apelido || p.nome || 'Promotor')}</div>
         <div class="text-gray-500 text-[11px] mt-1">${(p.marcas || []).length ? (p.marcas || []).map(esc).join(' · ') : 'Todas as marcas'}</div>
       </button>
+      <button data-act="marcas-promotor" data-uid="${esc(p.uid)}" class="p-2 text-amber-500" aria-label="Marcas do promotor"><i data-lucide="tags" class="w-4 h-4"></i></button>
       <button data-act="renomear" data-uid="${esc(p.uid)}" class="p-2 text-amber-500" aria-label="Alterar nome"><i data-lucide="pencil" class="w-4 h-4"></i></button>
       <button data-act="planilha" data-uid="${esc(p.uid)}" class="p-2 text-amber-500" aria-label="Baixar planilha"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i></button>
       <button data-act="remover" data-uid="${esc(p.uid)}" class="p-2 text-red-500" aria-label="Remover promotor"><i data-lucide="x" class="w-4 h-4"></i></button>
@@ -344,6 +357,107 @@ async function dadosDo(uid) {
   return cache[uid];
 }
 
+// ---------- marcas da agência e filtro por marca ----------
+const marcasAgencia = () => Array.isArray(perfil && perfil.marcas) ? perfil.marcas : [];
+
+// Dados do promotor só das marcas que a agência escolheu para ele
+async function dadosFiltrados(uid) {
+  const d = await dadosDo(uid);
+  const p = promotores.find(x => x.uid === uid);
+  const sel = ((p && p.marcas) || []).map(norm).filter(Boolean);
+  if (!sel.length) return { ...d, semFiltro: true };
+  const lojas = d.lojas.filter(l => (l.marcas || []).some(m => sel.includes(norm(m.nome))));
+  const lojaIds = new Set(lojas.map(l => l.id));
+  const daMarca = (x) => { const m = norm(x.marcaNome || x.marca); return m ? sel.includes(m) : lojaIds.has(x.lojaId); };
+  return {
+    lojas,
+    visitas: d.visitas.filter(v => lojaIds.has(v.lojaId)),
+    produtos: d.produtos.filter(daMarca),
+    vencidos: d.vencidos.filter(daMarca),
+    semFiltro: false,
+  };
+}
+
+function telaMarcasAgencia(msg = '') {
+  $('#topo').classList.remove('hidden');
+  $('#titulo').textContent = 'Marcas';
+  const lista = marcasAgencia();
+  tela(`
+    <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+    <p class="text-gray-500 text-xs mb-4">Cadastre as marcas que a agência representa. Depois, escolha quais marcas cada promotor atende.</p>
+    ${erroBox(msg)}
+    <div class="card p-4 mb-4">
+      ${lista.length ? lista.map(m => `<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0"><span class="text-white text-sm font-bold">${esc(m)}</span><button data-act="rem-marca" data-nome="${esc(m)}" class="text-red-500 text-[10px] font-black uppercase">Remover</button></div>`).join('') : '<div class="text-gray-500 text-xs">Nenhuma marca ainda.</div>'}
+    </div>
+    <form id="f-marca" class="flex gap-2">
+      <input name="nome" class="campo" placeholder="Nome da marca" maxlength="60" required>
+      <button class="btn-line" style="width:auto;padding:14px 18px">Adicionar</button>
+    </form>`);
+  ligarForm('f-marca', adicionarMarca);
+}
+
+async function adicionarMarca(e) {
+  e.preventDefault();
+  const nome = String(new FormData(e.target).get('nome') || '').trim().slice(0, 60);
+  if (!nome) return telaMarcasAgencia('Digite o nome da marca.');
+  const lista = marcasAgencia();
+  if (lista.some(m => norm(m) === norm(nome))) return telaMarcasAgencia('Essa marca já está cadastrada.');
+  await salvarMarcasAgencia([...lista, nome]);
+}
+
+async function salvarMarcasAgencia(nova) {
+  try {
+    await updateDoc(doc(db, 'agencias', user.uid), { marcas: nova });
+    perfil.marcas = nova;
+    telaMarcasAgencia();
+  } catch (err) { console.error(err); telaMarcasAgencia('Não consegui salvar. Tente de novo.'); }
+}
+
+function telaMarcasPromotor(uid, msg = '') {
+  const p = promotores.find(x => x.uid === uid); if (!p) return telaPrincipal();
+  $('#topo').classList.remove('hidden');
+  $('#titulo').textContent = 'Marcas do promotor';
+  const lista = marcasAgencia(), atuais = p.marcas || [];
+  tela(`
+    <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+    <div class="text-white font-black italic uppercase text-lg mb-1">${esc(p.apelido || p.nome || 'Promotor')}</div>
+    <p class="text-gray-500 text-xs mb-4">Marque só as marcas que este promotor atende para a sua agência. Os relatórios mostram apenas essas marcas.</p>
+    ${erroBox(msg)}
+    ${lista.length ? `<form id="f-marcas-p" class="space-y-3">
+      <div class="card p-4">${lista.map(m => `<label class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0 text-gray-200 text-sm"><input type="checkbox" name="m" value="${esc(m)}" ${atuais.includes(m) ? 'checked' : ''} class="w-5 h-5 accent-amber-500"> ${esc(m)}</label>`).join('')}</div>
+      <button class="btn">Salvar marcas</button>
+    </form>` : `<div class="card p-4 text-gray-400 text-sm mb-3">Cadastre antes as marcas da agência.</div>
+      <button data-act="marcas-agencia" class="btn-line">Cadastrar marcas</button>`}`);
+  ligarForm('f-marcas-p', (e) => salvarMarcasPromotor(e, uid));
+}
+
+async function salvarMarcasPromotor(e, uid) {
+  e.preventDefault();
+  const sel = new FormData(e.target).getAll('m').map(String);
+  if (!sel.length) return telaMarcasPromotor(uid, 'Escolha pelo menos uma marca.');
+  const p = promotores.find(x => x.uid === uid); if (!p) return;
+  try {
+    await updateDoc(doc(db, 'vinculos', email, 'promotores', uid), { marcas: sel });
+    p.marcas = sel;
+    telaPrincipal();
+  } catch (err) { console.error(err); telaMarcasPromotor(uid, 'Não consegui salvar. Tente de novo.'); }
+}
+
+// Pesquisa por voz (navegador)
+function iniciarVoz() {
+  const R = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!R) return alert('Seu navegador não tem pesquisa por voz. Digite o nome.');
+  const r = new R();
+  r.lang = 'pt-BR'; r.interimResults = false;
+  r.onresult = (e) => {
+    busca = String(e.results[0][0].transcript || '').replace(/[.!?]+$/, '').trim();
+    const campo = $('#busca'); if (campo) campo.value = busca;
+    renderListaPromotores();
+  };
+  r.onerror = () => alert('Não consegui ouvir. Tente de novo.');
+  r.start();
+}
+
 // ---------- relatório ----------
 async function abrirRelatorio(uid) {
   const p = promotores.find(x => x.uid === uid); if (!p) return;
@@ -351,12 +465,13 @@ async function abrirRelatorio(uid) {
   $('#titulo').textContent = p.apelido || p.nome || 'Promotor';
   tela('<p class="text-gray-500 text-sm">Carregando...</p>');
   try {
-    const d = await dadosDo(uid);
+    const d = await dadosFiltrados(uid);
     const todas = [...new Set(d.lojas.flatMap(l => (l.marcas || []).map(m => String(m.nome).trim())).filter(Boolean))];
     const marcas = (p.marcas && p.marcas.length) ? p.marcas : todas;
     const grupos = marcas.map(m => ({ marca: m, lojas: d.lojas.filter(l => (l.marcas || []).some(x => norm(x.nome) === norm(m))) }));
     tela(`
       <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+      ${d.semFiltro ? '<div class="card p-3 mb-3 text-amber-500 text-[11px] font-bold">Este promotor ainda não tem marcas escolhidas. Mostrando tudo. Toque na etiqueta para escolher.</div>' : ''}
       <div class="card p-4 mb-3">
         <div class="text-[9px] text-gray-500 font-black uppercase">Promotor</div>
         <div class="text-white font-black text-lg">${esc(p.nome || '')}</div>
@@ -405,7 +520,7 @@ async function rotaRender(diaSel) {
   const p = promotores.find(x => x.uid === atual); if (!p) return;
   tela('<p class="text-gray-500 text-sm">Carregando...</p>');
   try {
-    const d = await dadosDo(atual);
+    const d = await dadosFiltrados(atual);
     const ativos = new Set([...d.visitas.map(v => v.data), ...d.produtos.map(x => x.dia), ...d.vencidos.map(x => x.dataRetirada)].filter(Boolean));
     const ano = mes.getFullYear(), m = mes.getMonth();
     const primeiro = new Date(ano, m, 1).getDay(), total = new Date(ano, m + 1, 0).getDate();
@@ -453,7 +568,7 @@ async function rotaRender(diaSel) {
 async function baixarPlanilha(uid) {
   const p = promotores.find(x => x.uid === uid); if (!p) return;
   try {
-    const d = await dadosDo(uid);
+    const d = await dadosFiltrados(uid);
     const nomeLoja = (id) => (d.lojas.find(l => l.id === id) || {}).nome || '';
     const linhas = [['VISITAS'], ['Data', 'Hora', 'Loja']];
     d.visitas.slice().sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora))
@@ -495,6 +610,10 @@ document.addEventListener('click', async (e) => {
   else if (act === 'renomear') renomear(uid);
   else if (act === 'planilha') baixarPlanilha(uid);
   else if (act === 'remover') remover(uid);
+  else if (act === 'marcas-agencia') telaMarcasAgencia();
+  else if (act === 'marcas-promotor') telaMarcasPromotor(uid);
+  else if (act === 'rem-marca') salvarMarcasAgencia(marcasAgencia().filter(m => m !== b.dataset.nome));
+  else if (act === 'voz') iniciarVoz();
   else if (act === 'voltar') telaPrincipal();
   else if (act === 'mes') { mes = new Date(mes.getFullYear(), mes.getMonth() + Number(b.dataset.n), 1); rotaRender(null); }
   else if (act === 'dia') rotaRender(b.dataset.dia);
