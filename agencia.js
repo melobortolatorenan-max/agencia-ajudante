@@ -319,7 +319,7 @@ async function carregarResumo() {
     const [txt, cls] = situacao(l);
     const pct = l.previstas ? Math.min(100, Math.round(resolvidas(l) / l.previstas * 100)) : 0;
     return `<tr class="${zebra} border-t border-gray-800">
-      <td class="px-4 py-3"><div class="text-white font-bold">${nome}</div><span class="inline-block mt-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase ${cls}">${txt}</span>${l.motivos.map(m => `<div class="text-[10px] text-gray-400 mt-1">${esc(m.loja || 'Loja')}: <span class="text-gray-300">${esc(m.motivo || 'sem motivo informado')}</span></div>`).join('')}</td>
+      <td class="px-4 py-3 align-top"><div class="text-white font-bold leading-tight">${nome}</div><span class="inline-block mt-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase whitespace-nowrap ${cls}">${txt}</span>${l.motivos.map(m => `<div class="text-[10px] text-gray-400 mt-1 leading-tight break-words max-w-[9rem]"><span class="text-gray-500">${esc(m.loja || 'Loja')}:</span> <span class="text-gray-200">${esc(m.motivo || 'sem motivo')}</span></div>`).join('')}</td>
       <td class="px-2 py-3 text-center"><div class="text-amber-500 font-black">${l.feitas}<span class="text-gray-500 font-bold"> / ${l.previstas}</span></div><div class="h-1.5 w-16 mx-auto mt-1 rounded bg-gray-800 overflow-hidden"><div class="h-1.5 bg-amber-500" style="width:${pct}%"></div></div></td>
       <td class="px-2 py-3 text-center font-black ${l.semVisita ? 'text-red-400' : 'text-gray-600'}">${l.semVisita}</td>
       <td class="px-2 py-3 text-center font-black ${l.adiadas ? 'text-amber-500' : 'text-gray-600'}">${l.adiadas}</td>
@@ -336,7 +336,7 @@ async function carregarResumo() {
     </div>
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
-        <thead><tr class="text-[9px] text-gray-500 font-black uppercase">
+        <thead><tr class="text-[9px] text-gray-500 font-black uppercase whitespace-nowrap">
           <th class="px-4 py-2 text-left">Promotor</th><th class="px-2 py-2 text-center">Visitas</th><th class="px-2 py-2 text-center">Sem visita</th><th class="px-2 py-2 text-center">Adiadas</th><th class="px-4 py-2 text-right">Retirado</th>
         </tr></thead>
         <tbody>${linhasHtml}</tbody>
@@ -784,7 +784,7 @@ function telaEquipeHoje() {
   tela(`
     <button data-act="config" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Configurações</button>
     <div id="resumo-equipe"><div class="card p-4 text-gray-500 text-xs">Carregando...</div></div>
-    <div class="flex flex-wrap gap-2 mt-4"><button data-act="equipe-hoje" class="btn-line" style="width:auto;flex:1">Atualizar</button><button data-act="compartilhar-resumo" class="btn-line" style="width:auto;flex:1">Compartilhar</button><button data-act="imprimir-equipe" class="btn" style="width:auto;flex:1">Salvar em PDF</button></div>`);
+    <div class="flex gap-2 mt-3"><button data-act="equipe-hoje" class="flex-1 py-2 rounded-xl border border-amber-500/60 text-amber-500 text-[10px] font-black uppercase">Atualizar</button><button data-act="compartilhar-resumo" class="flex-1 py-2 rounded-xl border border-amber-500/60 text-amber-500 text-[10px] font-black uppercase">Compartilhar</button><button data-act="imprimir-equipe" class="flex-1 py-2 rounded-xl bg-amber-500 text-black text-[10px] font-black uppercase">PDF</button></div>`);
   carregarResumo();
 }
 
