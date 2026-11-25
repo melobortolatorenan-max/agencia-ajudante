@@ -702,7 +702,7 @@ async function ativarNotificacoes() {
     await updateDoc(doc(db, 'agencias', user.uid), { fcmTokens: arrayUnion(token) });
     telaPrincipal();
     alert('Notificações ativadas neste aparelho.');
-  } catch (err) { console.error(err); alert('Não consegui ativar as notificações agora.'); }
+  } catch (err) { console.error(err); alert('Não consegui ativar as notificações. Detalhe: ' + (err.code || err.message || err)); }
 }
 
 // ---------- solicitações de aprovação (sem visita, adiar, dias de visita) ----------
@@ -859,6 +859,7 @@ function telaConfig(sub) {
     ${item('texto-alternar', 'Tamanho do texto', grande ? 'Grande (toque para normal)' : 'Normal (toque para grande)')}
     ${item('contraste-alternar', 'Alto contraste', contraste ? 'Ligado (toque para desligar)' : 'Desligado (toque para ligar)')}
     ${item('compacta-alternar', 'Lista compacta', compacta ? 'Ligada (toque para desligar)' : 'Desligada (toque para ligar)')}
+    ${item('ativar-notif', 'Notificações no celular', 'Receber aviso quando um promotor pedir aprovação')}
     ${item('instalar', 'Aplicativo', 'Como instalar na tela inicial do celular')}
     <a href="mailto:melobortolato.renan@gmail.com?subject=Agência%20-%20Promotor%20Ajudante" class="card p-4 mb-3 block"><div class="text-white font-black italic uppercase text-sm">Central de atendimento</div><div class="text-gray-500 text-[11px] mt-1">Fale com a Melo Staff por e-mail</div></a>
     ${item('termos', 'Termos de uso', 'Regras de uso do aplicativo')}
