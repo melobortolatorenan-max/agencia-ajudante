@@ -228,16 +228,6 @@ function telaPrincipal() {
   $('#topo').classList.remove('hidden');
   $('#titulo').textContent = 'Promotores';
   atual = null;
-  const agora = new Date();
-  const linhasConvites = convites.map(c => {
-    const exp = dataDe(c.expiraEm);
-    const expirado = c.status === 'pendente' && exp && exp < agora;
-    const st = expirado ? 'expirado' : c.status;
-    const cor = st === 'aceito' ? 'text-green-400' : (st === 'pendente' ? 'text-amber-500' : 'text-red-400');
-    return `<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
-      <span class="text-gray-200 text-sm">${esc(c.promotorEmail)}</span>
-      <span class="text-[10px] font-black uppercase ${cor}">${esc(st)}</span></div>`;
-  }).join('');
   tela(`
     <div class="flex gap-2 mb-4">
       <div class="flex-1 relative">
@@ -250,13 +240,6 @@ function telaPrincipal() {
       <div class="text-[9px] text-gray-500 font-black uppercase">Marcas da agência</div>
       <div class="text-gray-200 text-sm mt-1">${marcasAgencia().length ? marcasAgencia().map(esc).join(' · ') : 'Nenhuma marca cadastrada. Toque para cadastrar.'}</div>
     </button>
-    <div class="card p-4 mb-4">
-      <div class="flex items-center justify-between mb-2">
-        <div class="text-[9px] text-gray-500 font-black uppercase">Convites enviados</div>
-        <button data-act="novo-convite" class="text-amber-500 text-[10px] font-black uppercase">+ Convidar</button>
-      </div>
-      ${linhasConvites || '<div class="text-gray-500 text-xs">Nenhum convite enviado.</div>'}
-    </div>
     <div id="lista-promotores"></div>`);
   const campoBusca = $('#busca'); if (campoBusca) campoBusca.addEventListener('input', () => { busca = campoBusca.value; renderListaPromotores(); });
   renderListaPromotores();
@@ -488,12 +471,41 @@ function iniciarVoz() {
   r.start();
 }
 
+// ---------- convites enviados (dentro de Configurações) ----------
+function telaConvites() {
+  $('#topo').classList.remove('hidden');
+  $('#titulo').textContent = 'Convites';
+  const agora = new Date();
+  const linhasConvites = convites.map(c => {
+    const exp = dataDe(c.expiraEm);
+    const expirado = c.status === 'pendente' && exp && exp < agora;
+    const st = expirado ? 'expirado' : c.status;
+    const cor = st === 'aceito' ? 'text-green-400' : (st === 'pendente' ? 'text-amber-500' : 'text-red-400');
+    return `<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+      <span class="text-gray-200 text-sm">${esc(c.promotorEmail)}</span>
+      <span class="text-[10px] font-black uppercase ${cor}">${esc(st)}</span></div>`;
+  }).join('');
+  tela(`
+    <button data-act="config" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Configurações</button>
+    <div class="card p-4 mb-4">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-[9px] text-gray-500 font-black uppercase">Convites enviados</div>
+        <button data-act="novo-convite" class="text-amber-500 text-[10px] font-black uppercase">+ Convidar</button>
+      </div>
+      ${linhasConvites || '<div class="text-gray-500 text-xs">Nenhum convite enviado.</div>'}
+    </div>`);
+}
+
 // ---------- configurações e equipe de hoje ----------
 function telaConfig() {
   $('#topo').classList.remove('hidden');
   $('#titulo').textContent = 'Configurações';
   tela(`
     <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+    <button data-act="convites" class="card p-4 mb-3 w-full text-left block">
+      <div class="text-white font-black italic uppercase text-sm">Convites enviados</div>
+      <div class="text-gray-500 text-[11px] mt-1">Promotores convidados e situação de cada convite</div>
+    </button>
     <button data-act="equipe-hoje" class="card p-4 mb-3 w-full text-left block">
       <div class="text-white font-black italic uppercase text-sm">Equipe hoje</div>
       <div class="text-gray-500 text-[11px] mt-1">Andamento de cada promotor no dia</div>
@@ -668,6 +680,7 @@ document.addEventListener('click', async (e) => {
   else if (act === 'remover') remover(uid);
   else if (act === 'config') telaConfig();
   else if (act === 'equipe-hoje') telaEquipeHoje();
+  else if (act === 'convites') telaConvites();
   else if (act === 'marcas-agencia') telaMarcasAgencia();
   else if (act === 'marcas-promotor') telaMarcasPromotor(uid);
   else if (act === 'rem-marca') salvarMarcasAgencia(marcasAgencia().filter(m => m !== b.dataset.nome));
