@@ -407,7 +407,7 @@ async function handleUser(u) {
   if (porSenha && !u.emailVerified) return telaVerificar();
   const snap = await getDoc(doc(db, 'agencias', u.uid));
   perfil = snap.exists() ? snap.data() : null;
-  const nomeTopo = $('#nome-agencia'); if (nomeTopo) nomeTopo.textContent = (perfil && perfil.nome) || 'Agência';
+
   if (!perfil) return telaComplemento();
   await carregarConvites();
   const vinc = await getDocs(collection(db, 'vinculos', email, 'promotores'));
