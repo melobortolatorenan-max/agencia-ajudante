@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import { getAuth, onAuthStateChanged, signInWithRedirect, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, deleteUser, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, arrayUnion } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { getApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
+import { getMessaging, getToken, isSupported, onMessage } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -690,6 +690,20 @@ function imprimirEquipe() {
 }
 
 // ---------- notificações no celular ----------
+// Com o app aberto, o Firebase entrega o aviso ao próprio app: mostramos a notificação do celular aqui.
+let avisosOuvidos = false;
+async function ouvirAvisos() {
+  if (avisosOuvidos || !(await isSupported()) || Notification.permission !== 'granted') return;
+  avisosOuvidos = true;
+  onMessage(getMessaging(getApp()), (payload) => {
+    const n = payload.notification || {};
+    navigator.serviceWorker.getRegistration().then(reg => {
+      if (reg) reg.showNotification(n.title || 'Agência', { body: n.body || '', icon: 'icon-192.png', data: { url: '/' } });
+    });
+  });
+}
+ouvirAvisos().catch(() => {});
+
 async function ativarNotificacoes() {
   try {
     if (!(await isSupported())) return alert('Este aparelho não aceita notificações.');
@@ -700,6 +714,7 @@ async function ativarNotificacoes() {
     const token = await getToken(getMessaging(getApp()), { vapidKey: window.FCM_VAPID_KEY, serviceWorkerRegistration: reg });
     if (!token) throw new Error('sem token');
     await updateDoc(doc(db, 'agencias', user.uid), { fcmTokens: arrayUnion(token) });
+    avisosOuvidos = false; ouvirAvisos().catch(() => {});
     telaPrincipal();
     alert('Notificações ativadas neste aparelho.');
   } catch (err) { console.error(err); alert('Não consegui ativar as notificações. Detalhe: ' + (err.code || err.message || err)); }
