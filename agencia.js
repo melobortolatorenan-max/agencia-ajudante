@@ -19,6 +19,24 @@ const norm = (t) => String(t || '').trim().toLowerCase();
 const celulaSegura = (v) => { const s = String(v ?? ''); return /^[=+\-@]/.test(s) ? "'" + s : s; };
 const ufOptions = (sel) => UFS.map(u => `<option value="${u}" ${u === sel ? 'selected' : ''}>${u}</option>`).join('');
 
+// ---------- escolha de perfil: promotor ou agência (antes do login) ----------
+const URL_PERFIL = { promotor: 'https://promotor-ajudante.vercel.app', agencia: 'https://agencia-ajudante.vercel.app' };
+function fecharEscolhaPerfil() { const o = document.getElementById('escolha-perfil'); if (o) { o.classList.add('hidden'); o.classList.remove('flex'); } }
+function mostrarEscolhaPerfil() { const o = document.getElementById('escolha-perfil'); if (o) { o.classList.remove('hidden'); o.classList.add('flex'); } }
+function escolherPerfil(perfil) {
+  if (perfil === 'agencia') { localStorage.setItem('perfil_escolhido', 'agencia'); fecharEscolhaPerfil(); }
+  else location.href = URL_PERFIL.promotor + '/?perfil=promotor';
+}
+function iniciarEscolhaPerfil() {
+  if (new URLSearchParams(location.search).get('perfil') === 'agencia') {
+    localStorage.setItem('perfil_escolhido', 'agencia');
+    history.replaceState(null, '', location.pathname);
+  }
+  document.querySelectorAll('[data-escolha]').forEach(b => b.addEventListener('click', () => escolherPerfil(b.dataset.escolha)));
+  if (!localStorage.getItem('perfil_escolhido')) mostrarEscolhaPerfil();
+}
+iniciarEscolhaPerfil();
+
 // Tamanho do texto (normal ou grande), guardado neste aparelho
 const aplicarTamanhoTexto = () => { document.documentElement.style.fontSize = localStorage.getItem('agencia_texto_grande') === '1' ? '19px' : ''; };
 aplicarTamanhoTexto();
@@ -101,6 +119,7 @@ function telaEntrar(msg = '') {
         <button class="btn-line">Entrar com e-mail</button>
       </form>
       <button data-act="esqueci" class="text-gray-500 text-xs font-black uppercase mt-3">Esqueci a senha</button>
+      <button data-act="trocar-perfil" class="text-gray-500 text-[10px] font-black uppercase mt-2">Sou promotor? Trocar perfil</button>
       <button data-act="ir-criar" class="text-amber-500 text-xs font-black uppercase mt-6">Criar conta da agência</button>
     </section>`);
   ligarForm('f-entrar', async (e) => {
@@ -990,6 +1009,7 @@ document.addEventListener('click', async (e) => {
   else if (act === 'convites') telaConvites();
   else if (act === 'redefinir-senha') resetSenha(email);
   else if (act === 'esqueci') esqueciSenha();
+  else if (act === 'trocar-perfil') mostrarEscolhaPerfil();
   else if (act === 'plano') alert('Plano de assinatura: em breve.');
   else if (act === 'contraste-alternar') { const on = localStorage.getItem('agencia_contraste') !== '1'; localStorage.setItem('agencia_contraste', on ? '1' : '0'); document.documentElement.classList.toggle('contraste', on); telaConfig(); }
   else if (act === 'compacta-alternar') { const on = localStorage.getItem('agencia_compacta') !== '1'; localStorage.setItem('agencia_compacta', on ? '1' : '0'); document.body.classList.toggle('compacta', on); telaConfig(); }

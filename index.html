@@ -18,9 +18,21 @@
     .btn-line { width:100%; padding:14px; border-radius:20px; border:1px solid #f59e0b; color:#f59e0b; font-weight:900; text-transform:uppercase; font-size:12px; }
     .campo { width:100%; padding:14px; border-radius:18px; background:#111827; border:1px solid #1f2937; color:#fff; font-size:16px; outline:none; }
     .campo:focus { border-color:#f59e0b; }
+    html.contraste .text-gray-500, html.contraste .text-gray-600 { color:#e5e7eb !important; }
+    html.contraste .card, html.contraste .card-app { border-color:#9ca3af !important; }
+    body.compacta .card, body.compacta .card-app { padding-top:.6rem !important; padding-bottom:.6rem !important; }
   </style>
 </head>
 <body class="min-h-screen" style="padding-top:max(16px, env(safe-area-inset-top)); padding-bottom:max(16px, env(safe-area-inset-bottom))">
+<!-- ESCOLHA DE PERFIL (promotor ou agência) -->
+<div id="escolha-perfil" class="hidden fixed inset-0 z-[300] bg-black flex-col items-center justify-center p-6">
+  <div class="text-[10px] text-gray-500 font-black uppercase tracking-[0.3em] mb-2">Bem-vindo</div>
+  <div class="text-2xl font-black italic uppercase text-amber-500 mb-2">Quem é você?</div>
+  <p class="text-gray-400 text-sm text-center mb-8 max-w-xs">Escolha para abrir o aplicativo certo.</p>
+  <button data-escolha="promotor" class="w-full max-w-sm py-5 rounded-2xl border border-amber-500 text-amber-500 font-black uppercase mb-3">Sou promotor</button>
+  <button data-escolha="agencia" class="w-full max-w-sm py-5 rounded-2xl bg-amber-500 text-black font-black uppercase">Sou agência</button>
+</div>
+
   <div class="max-w-md mx-auto px-4">
     <header id="topo" class="hidden flex items-center justify-between py-4">
       <div class="flex items-center gap-3">
