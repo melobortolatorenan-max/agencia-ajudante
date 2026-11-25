@@ -1,6 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithRedirect, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, deleteUser, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, query, where, arrayUnion } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { getApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getMessaging, getToken, isSupported } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
 
 const app = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -279,6 +281,7 @@ function telaPrincipal() {
   $('#titulo').textContent = 'Promotores';
   atual = null;
   tela(`
+    ${('Notification' in window) && Notification.permission !== 'granted' ? `<button data-act="ativar-notif" class="card p-4 mb-4 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">Ativar notificações</div><div class="text-gray-500 text-[11px] mt-1">Receba aviso no celular quando um promotor pedir aprovação</div></button>` : ''}
     ${solicitacoesAg.length ? `<button data-act="solicitacoes" class="card p-4 mb-4 w-full text-left block" style="border:1px solid rgba(245,158,11,0.6)"><div class="text-amber-500 font-black italic uppercase text-sm">Solicitações pendentes · ${solicitacoesAg.length}</div><div class="text-gray-400 text-[11px] mt-1">Sem visita, adiar visita ou dias de visita aguardando sua aprovação</div></button>` : ''}
     <div class="flex gap-2 mb-4">
       <div class="flex-1 relative">
@@ -686,6 +689,22 @@ function imprimirEquipe() {
   j.document.write(html); j.document.close(); j.focus(); setTimeout(() => j.print(), 300);
 }
 
+// ---------- notificações no celular ----------
+async function ativarNotificacoes() {
+  try {
+    if (!(await isSupported())) return alert('Este aparelho não aceita notificações.');
+    const permissao = await Notification.requestPermission();
+    if (permissao !== 'granted') return alert('Permissão negada. Libere as notificações deste site nas configurações do navegador.');
+    const reg = await navigator.serviceWorker.register('firebase-messaging-sw.js');
+    await navigator.serviceWorker.ready;
+    const token = await getToken(getMessaging(getApp()), { vapidKey: window.FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+    if (!token) throw new Error('sem token');
+    await updateDoc(doc(db, 'agencias', user.uid), { fcmTokens: arrayUnion(token) });
+    telaPrincipal();
+    alert('Notificações ativadas neste aparelho.');
+  } catch (err) { console.error(err); alert('Não consegui ativar as notificações agora.'); }
+}
+
 // ---------- solicitações de aprovação (sem visita, adiar, dias de visita) ----------
 let solicitacoesAg = [];
 let unsubSol = null;
@@ -1062,6 +1081,7 @@ document.addEventListener('click', async (e) => {
   else if (act === 'remover') remover(uid);
   else if (act === 'config') telaConfig('');
   else if (act === 'solicitacoes') telaSolicitacoes();
+  else if (act === 'ativar-notif') ativarNotificacoes();
   else if (act === 'sol-aprovar') responderSolicitacao(b.dataset.id, 'aprovada');
   else if (act === 'sol-recusar') responderSolicitacao(b.dataset.id, 'recusada');
   else if (act === 'config-sub') telaConfig(b.dataset.sub);
