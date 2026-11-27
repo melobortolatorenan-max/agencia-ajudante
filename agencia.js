@@ -444,6 +444,8 @@ function telaPrincipal() {
     ${('Notification' in window) && Notification.permission !== 'granted' ? `<button data-act="ativar-notif" class="card p-4 mb-4 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">Ativar notificações</div><div class="text-gray-500 text-[11px] mt-1">Receba aviso no celular quando um promotor pedir aprovação</div></button>` : ''}
     ${solicitacoesAg.length ? `<button data-act="solicitacoes" class="card p-4 mb-4 w-full text-left block" style="border:1px solid rgba(245,158,11,0.6)"><div class="text-amber-500 font-black italic uppercase text-sm">Solicitações pendentes · ${solicitacoesAg.length}</div><div class="text-gray-400 text-[11px] mt-1">Sem visita, adiar visita ou dias de visita aguardando sua aprovação</div></button>` : ''}
     <div class="text-xs text-gray-500 mb-3">${promotores.length} ${promotores.length === 1 ? 'promotor ativo' : 'promotores ativos'}</div>
+    <button data-act="equipe-hoje" class="card p-4 mb-4 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">Equipe hoje</div><div class="text-gray-500 text-[11px] mt-1">Ver o andamento de cada promotor no dia</div></button>
+    ${ultimaLiberacao() ? '<button data-act="config-sub" data-sub="relatorios" class="card p-4 mb-4 w-full text-left block" style="border:1px solid rgba(245,158,11,0.6)"><div class="text-amber-500 font-black italic uppercase text-sm">Relatório semanal disponível</div><div class="text-gray-500 text-[11px] mt-1">Toque para baixar</div></button>' : ''}
     ${barraCumprimento()}
     <div class="flex gap-2 mb-4">
       <div class="flex-1 relative">
@@ -904,9 +906,21 @@ function ouvirSolicitacoes() {
   }, (e) => console.warn('solicitacoes:', e));
 }
 
+let ordemSol = 'data';
+function tempoEspera(s) {
+  const dt = s.criadoEm && s.criadoEm.toDate ? s.criadoEm.toDate() : null;
+  if (!dt) return '';
+  const min = Math.round((Date.now() - dt.getTime()) / 60000);
+  if (min < 60) return `há ${min} min`;
+  if (min < 1440) return `há ${Math.round(min / 60)} h`;
+  return `há ${Math.round(min / 1440)} dia(s)`;
+}
 function telaSolicitacoes() {
   $('#topo').classList.remove('hidden');
   $('#titulo').textContent = 'Solicitações';
+  const ordenadas = [...solicitacoesAg].sort((x, y) => ordemSol === 'promotor'
+    ? (x.promotorNome || '').localeCompare(y.promotorNome || '', 'pt-BR')
+    : ((y.criadoEm && y.criadoEm.toMillis ? y.criadoEm.toMillis() : 0) - (x.criadoEm && x.criadoEm.toMillis ? x.criadoEm.toMillis() : 0)));
   const tipos = { sem_visita: 'Sem visita hoje', adiar: 'Adiar visita', dias: 'Dias de visita' };
   const diasNomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const detalhe = (s) => {
@@ -915,8 +929,8 @@ function telaSolicitacoes() {
     if (s.tipo === 'adiar') return `De ${dataBR(pl.de)} para <b class="text-gray-100">${dataBR(pl.para)}</b>`;
     return `Dias: <b class="text-gray-100">${(pl.dias || []).map(d => diasNomes[d]).join(', ') || 'nenhum'}</b>`;
   };
-  const lista = solicitacoesAg.map(s => `<div class="card p-4 mb-3">
-      <div class="text-[9px] text-gray-500 font-black uppercase">${esc(s.promotorNome || 'Promotor')} · ${tipos[s.tipo] || esc(s.tipo)}</div>
+  const lista = ordenadas.map(s => `<div class="card p-4 mb-3">
+      <div class="text-[9px] text-gray-500 font-black uppercase">${esc(s.promotorNome || 'Promotor')} · ${tipos[s.tipo] || esc(s.tipo)} · ${tempoEspera(s)}</div>
       <div class="text-white font-black italic uppercase text-sm mt-1">${esc(s.lojaNome || 'Loja')}</div>
       <div class="text-gray-400 text-xs mt-1">${detalhe(s)}</div>
       <div class="flex gap-2 mt-3">
@@ -925,6 +939,7 @@ function telaSolicitacoes() {
       </div>
     </div>`).join('');
   tela(`<button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+    <div class="flex gap-2 mb-3">${[['data', 'Mais recentes'], ['promotor', 'Por promotor']].map(([o, t]) => `<button data-act="sol-ordem" data-o="${o}" class="px-3 py-2 rounded-xl text-[10px] font-black uppercase border ${ordemSol === o ? 'bg-amber-500 text-black border-amber-500' : 'border-gray-700 text-gray-400'}">${t}</button>`).join('')}</div>
     ${lista || '<p class="text-gray-500 text-sm">Nenhuma solicitação pendente.</p>'}`);
 }
 
@@ -1151,6 +1166,7 @@ async function abrirRelatorio(uid) {
           <span class="text-[9px] font-black uppercase whitespace-nowrap" style="color:${cor}">${titulo}</span>
         </div>
         ${corpo}
+        <div class="text-[10px] mt-2 ${diasSemVisita(d, l) > 3 ? 'text-red-400 font-bold' : 'text-gray-500'}">${diasSemVisita(d, l) === null ? 'Nunca visitada' : diasSemVisita(d, l) === 0 ? 'Visitada hoje' : `${diasSemVisita(d, l)} dia(s) sem visita`}</div>
         <div class="mt-3">${quantidades || '<div class="text-gray-500 text-xs">Nenhuma marca</div>'}</div>
       </div>`;
     }).join('');
@@ -1167,6 +1183,7 @@ async function abrirRelatorio(uid) {
         <div class="text-[9px] text-gray-500 font-black uppercase mt-3">Marcas que atende</div>
         <div class="text-gray-200 text-sm">${marcasPromotor.map(esc).join(' · ') || 'Nenhuma marca'}</div>
         <div class="text-[10px] text-gray-500 mt-2">Período: ${dataBR(ini)} a ${dataBR(hoje)}</div>
+        <div class="text-[10px] text-gray-400 mt-1">Última visita registrada: <b class="text-gray-200">${ultimaVisitaTxt(d)}</b></div>
       </div>
       ${d.semFiltro ? '<div class="card p-3 mb-3 text-amber-500 text-[11px] font-bold">Este promotor ainda não tem marcas escolhidas. Mostrando tudo. Toque na etiqueta para escolher.</div>' : ''}
       ${cards || '<div class="card p-4 text-gray-500 text-xs mb-3">Nenhuma loja vinculada a essas marcas.</div>'}
@@ -1182,6 +1199,23 @@ async function abrirRelatorio(uid) {
       <button data-act="rota" data-uid="${esc(uid)}" class="btn">Ver rota</button>`);
     ligarForm('f-comentario', (e) => salvarComentario(e, uid));
   } catch (e) { console.error(e); tela('<p class="text-red-400 text-sm">Não consegui carregar o relatório.</p>'); }
+}
+
+// Última visita feita (não conta sem visita nem adiadas)
+function ultimaVisitaFeita(d, lojaId) {
+  const feitas = d.visitas.filter(v => (lojaId ? v.lojaId === lojaId : true) && !v.semVisita && !v.extra && !v.adiadaPara).sort((x, y) => (y.data + (y.hora || '')).localeCompare(x.data + (x.hora || '')));
+  return feitas[0] || null;
+}
+function ultimaVisitaTxt(d) {
+  const v = ultimaVisitaFeita(d);
+  return v ? `${dataBR(v.data)}${v.hora ? ' às ' + esc(v.hora) : ''}` : 'nenhuma';
+}
+function diasSemVisita(d, l) {
+  const v = ultimaVisitaFeita(d, l.id);
+  if (!v) return null;
+  const [y, m, dd] = v.data.split('-').map(Number);
+  const diff = Math.round((Date.now() - new Date(y, m - 1, dd).getTime()) / 86400000);
+  return Math.max(0, diff);
 }
 
 // Próxima data de atendimento da loja, depois de uma data
@@ -1314,6 +1348,7 @@ document.addEventListener('click', async (e) => {
   else if (act === 'rel-informativos') baixarInformativos();
   else if (act === 'ativar-notif') ativarNotificacoes();
   else if (act === 'sol-aprovar') responderSolicitacao(b.dataset.id, 'aprovada');
+  else if (act === 'sol-ordem') { ordemSol = b.dataset.o; telaSolicitacoes(); }
   else if (act === 'sol-recusar') responderSolicitacao(b.dataset.id, 'recusada');
   else if (act === 'config-sub') telaConfig(b.dataset.sub);
   else if (act === 'equipe-hoje') telaEquipeHoje();
