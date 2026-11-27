@@ -76,7 +76,7 @@ async function salvarAgenda(e) {
     perfil.relatorioAgenda = ag;
     telaConfig('relatorios');
     alert('Dia e horário salvos.');
-  } catch (err) { console.error(err); alert('Não consegui salvar. Tente de novo.'); }
+  } catch (err) { console.error(err); alert('Não foi possível salvar. Verifique a internet e tente de novo.'); }
 }
 
 // ---------- downloads: relatório semanal, planilha e informativos (sem e-mail) ----------
@@ -119,14 +119,27 @@ async function baixarRelatorioSemanal() {
       <td class="c">${feitas} / ${previstas}</td><td class="c">${semVisita.length}</td><td class="c">${adiadas}</td><td>${marcasHtml}</td></tr>
       ${motivos ? `<tr><td colspan="5"><ul class="motivos">${motivos}</ul></td></tr>` : ''}`;
   }).join('');
+  const porDia = [0, 0, 0, 0, 0, 0, 0];
+  const nomesDia = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  equipe.filter(e => e.d).forEach(({ d }) => {
+    const vistos = new Set();
+    d.visitas.filter(v => dentro(v.data) && !v.semVisita && !v.extra && !v.adiadaPara).forEach(v => {
+      const chave = v.data + '|' + v.lojaId;
+      if (vistos.has(chave)) return; vistos.add(chave);
+      porDia[new Date(v.data + 'T12:00:00').getDay()]++;
+    });
+  });
+  const tabelaDias = `<h2 style="color:#b45309;font-size:14px;margin:22px 0 6px">Lojas atendidas por dia da semana</h2>
+    <table><thead><tr>${nomesDia.map(n => `<th class="c">${n}</th>`).join('')}</tr></thead><tbody><tr>${porDia.map(q => `<td class="c">${q}</td>`).join('')}</tr></tbody></table>`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório semanal ${dataBR(ini)} a ${dataBR(hoje)}</title>
     <style>body{font-family:Arial,sans-serif;color:#111;padding:24px}h1{color:#b45309;font-size:20px;margin:0}p.sub{color:#555;margin:4px 0 16px}
     table{width:100%;border-collapse:collapse;font-size:13px}th{background:#f59e0b;color:#111;text-align:left;padding:8px}td{border-bottom:1px solid #ddd;padding:8px;vertical-align:top}
     td.c{text-align:center}.sub{color:#777;font-size:11px}ul.motivos{margin:4px 0 0;padding-left:18px;font-size:12px}</style></head><body>
     <h1>Relatório semanal da equipe</h1>
-    <p class="sub">${esc((perfil && perfil.nome) || 'Agência')} · ${dataBR(ini)} a ${dataBR(hoje)}</p>
+    <p class="sub">${esc((perfil && perfil.nome) || 'Agência')} · ${dataBR(ini)} a ${dataBR(hoje)} · gerado em ${new Date().toLocaleString('pt-BR')}</p>
     <table><thead><tr><th>Promotor e marcas</th><th class="c">Visitas</th><th class="c">Sem visita</th><th class="c">Adiadas</th><th>Retirado por marca</th></tr></thead>
     <tbody>${blocos || '<tr><td colspan="5">Nenhum promotor vinculado.</td></tr>'}</tbody></table>
+    ${tabelaDias}
     </body></html>`;
   baixarArquivo(`Relatorio semanal ${hoje}.html`, html, 'text/html;charset=utf-8');
 }
@@ -207,7 +220,8 @@ window.addEventListener('online', atualizarFaixaConexao);
 window.addEventListener('offline', atualizarFaixaConexao);
 atualizarFaixaConexao();
 
-let user = null, perfil = null, email = null, promotores = [], convites = [], atual = null, mes = new Date(), cache = {}, criando = false, busca = '';
+let user = null, perfil = null, email = null, promotores = [], convites = [], atual = null, mes = new Date(), cache = {}, criando = false, busca = sessionStorage.getItem('agencia_busca') || '';
+let filtroPromotor = 'todos';
 
 const tela = (html) => { $('#corpo').innerHTML = html; if (window.lucide) lucide.createIcons(); };
 const erroBox = (msg) => msg ? `<p class="text-red-400 text-sm mb-3">${esc(msg)}</p>` : '';
@@ -222,7 +236,7 @@ const msgErro = (e) => {
   if (c === 'auth/too-many-requests') return 'Muitas tentativas. Aguarde alguns minutos.';
   if (c === 'permission-denied') return 'Sem permissão. Saia da conta e entre de novo.';
   if (c === 'auth/requires-recent-login') return 'Por segurança, saia e entre de novo.';
-  return 'Não consegui concluir. Tente de novo.';
+  return 'Algo não deu certo. Verifique a internet e tente de novo.';
 };
 
 // ---------- validação do cadastro ----------
@@ -252,6 +266,7 @@ const perfilDe = (f, emailConta) => ({
 // ---------- telas de entrada ----------
 function telaEntrar(msg = '') {
   $('#topo').classList.add('hidden');
+  const nav = $('#rodape-nav'); if (nav) { nav.classList.add('hidden'); document.body.classList.remove('com-rodape'); }
   tela(`
     <section class="min-h-[85vh] flex flex-col items-center justify-center text-center">
       <img src="logo.png" class="w-28 h-28 rounded-full p-3 bg-black ring-2 ring-amber-500/50 shadow-[0_0_40px_rgba(245,158,11,0.35)]" alt="">
@@ -351,7 +366,7 @@ function telaComplemento(msg = '', v = {}) {
     try {
       await setDoc(doc(db, 'agencias', user.uid), perfilDe(f, email));
       await handleUser(user);
-    } catch (err) { console.error(err); telaComplemento('Não consegui salvar. Tente de novo.', f); }
+    } catch (err) { console.error(err); telaComplemento('Não foi possível salvar. Verifique a internet e tente de novo.', f); }
   });
 }
 
@@ -421,12 +436,15 @@ onAuthStateChanged(auth, handleUser);
 // ---------- tela principal ----------
 function telaPrincipal() {
   ouvirSolicitacoes();
+  const nav = $('#rodape-nav'); if (nav) { nav.classList.remove('hidden'); document.body.classList.add('com-rodape'); }
   $('#topo').classList.remove('hidden');
   $('#titulo').textContent = 'Promotores';
   atual = null;
   tela(`
     ${('Notification' in window) && Notification.permission !== 'granted' ? `<button data-act="ativar-notif" class="card p-4 mb-4 w-full text-left block"><div class="text-white font-black italic uppercase text-sm">Ativar notificações</div><div class="text-gray-500 text-[11px] mt-1">Receba aviso no celular quando um promotor pedir aprovação</div></button>` : ''}
     ${solicitacoesAg.length ? `<button data-act="solicitacoes" class="card p-4 mb-4 w-full text-left block" style="border:1px solid rgba(245,158,11,0.6)"><div class="text-amber-500 font-black italic uppercase text-sm">Solicitações pendentes · ${solicitacoesAg.length}</div><div class="text-gray-400 text-[11px] mt-1">Sem visita, adiar visita ou dias de visita aguardando sua aprovação</div></button>` : ''}
+    <div class="text-xs text-gray-500 mb-3">${promotores.length} ${promotores.length === 1 ? 'promotor ativo' : 'promotores ativos'}</div>
+    ${barraCumprimento()}
     <div class="flex gap-2 mb-4">
       <div class="flex-1 relative">
         <i data-lucide="search" class="w-4 h-4 absolute text-gray-500" style="left:16px;top:50%;transform:translateY(-50%)"></i>
@@ -434,12 +452,16 @@ function telaPrincipal() {
       </div>
       <button data-act="voz" class="px-4 rounded-2xl border border-amber-500 text-amber-500" aria-label="Pesquisar por voz"><i data-lucide="mic" class="w-5 h-5"></i></button>
     </div>
+    <div id="contagem-busca" class="text-[11px] text-gray-500 -mt-2 mb-3"></div>
+    <div class="flex gap-2 mb-4 flex-wrap">
+      ${[['todos', 'Todos'], ['pendentes', 'Com visitas pendentes'], ['semvisita', 'Sem visita hoje']].map(([f, t]) => `<button data-act="filtro-prom" data-f="${f}" class="px-3 py-2 rounded-xl text-[10px] font-black uppercase border ${filtroPromotor === f ? 'bg-amber-500 text-black border-amber-500' : 'border-gray-700 text-gray-400'}">${t}</button>`).join('')}
+    </div>
     <button data-act="marcas-agencia" class="card p-4 mb-4 w-full text-left block">
       <div class="text-[9px] text-gray-500 font-black uppercase">Marcas da agência</div>
       <div class="text-gray-200 text-sm mt-1">${marcasAgencia().length ? marcasAgencia().map(esc).join(' · ') : 'Nenhuma marca cadastrada. Toque para cadastrar.'}</div>
     </button>
     <div id="lista-promotores"></div>`);
-  const campoBusca = $('#busca'); if (campoBusca) campoBusca.addEventListener('input', () => { busca = campoBusca.value; renderListaPromotores(); });
+  const campoBusca = $('#busca'); if (campoBusca) campoBusca.addEventListener('input', () => { busca = campoBusca.value; sessionStorage.setItem('agencia_busca', busca); renderListaPromotores(); });
   renderListaPromotores();
   if (user && !localStorage.getItem('agencia_tutorial_visto_' + user.uid)) mostrarTutorial();
 }
@@ -474,20 +496,20 @@ async function carregarResumo() {
   ultimoResumo = { hoje, ordenados };
   const resolvidas = (l) => l.feitas + l.semVisita + l.adiadas;
   const situacao = (l) => {
-    if (!l.ok) return ['Erro', 'text-red-400 border-red-500/50'];
-    if (l.previstas === 0 && l.adiadas === 0) return ['Sem dia hoje', 'text-gray-400 border-gray-700'];
-    if (l.feitas === 0 && l.semVisita === 0 && l.adiadas === 0) return ['Sem visita', 'text-red-400 border-red-500/60'];
-    if (resolvidas(l) >= l.previstas) return ['Concluído', 'text-black bg-amber-500 border-amber-500'];
-    return ['Em andamento', 'text-amber-500 border-amber-500/60'];
+    if (!l.ok) return ['Erro', 'text-red-400 border-red-500/50', 'alert-circle'];
+    if (l.previstas === 0 && l.adiadas === 0) return ['Sem dia hoje', 'text-gray-400 border-gray-700', 'minus-circle'];
+    if (l.feitas === 0 && l.semVisita === 0 && l.adiadas === 0) return ['Sem visita', 'text-red-400 border-red-500/60', 'alert-triangle'];
+    if (resolvidas(l) >= l.previstas) return ['Concluído', 'text-black bg-amber-500 border-amber-500', 'check-circle'];
+    return ['Em andamento', 'text-amber-500 border-amber-500/60', 'clock'];
   };
   const linhasHtml = ordenados.map((l, i) => {
     const nome = esc(l.p.apelido || l.p.nome || 'Promotor');
     const zebra = i % 2 ? 'bg-black/30' : '';
     if (!l.ok) return `<tr class="${zebra} border-t border-gray-800"><td class="px-4 py-3 text-white font-bold">${nome}</td><td colspan="4" class="px-2 py-3 text-red-400 text-xs">Erro ao carregar</td></tr>`;
-    const [txt, cls] = situacao(l);
+    const [txt, cls, icone] = situacao(l);
     const pct = l.previstas ? Math.min(100, Math.round(resolvidas(l) / l.previstas * 100)) : 0;
     return `<tr class="${zebra} border-t border-gray-800">
-      <td class="px-4 py-3 align-top"><div class="text-white font-bold leading-tight">${nome}</div><span class="inline-block mt-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase whitespace-nowrap ${cls}">${txt}</span>${l.motivos.map(m => `<div class="text-[10px] text-gray-400 mt-1 leading-tight break-words max-w-[9rem]"><span class="text-gray-500">${esc(m.loja || 'Loja')}:</span> <span class="text-gray-200">${esc(m.motivo || 'sem motivo')}</span></div>`).join('')}</td>
+      <td class="px-4 py-3 align-top"><div class="text-white font-bold leading-tight">${nome}</div><span class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase whitespace-nowrap ${cls}"><i data-lucide="${icone}" class="w-3 h-3"></i>${txt}</span>${l.motivos.map(m => `<div class="text-[10px] text-gray-400 mt-1 leading-tight break-words max-w-[9rem]"><span class="text-gray-500">${esc(m.loja || 'Loja')}:</span> <span class="text-gray-200">${esc(m.motivo || 'sem motivo')}</span></div>`).join('')}</td>
       <td class="px-2 py-3 text-center"><div class="text-amber-500 font-black">${l.feitas}<span class="text-gray-500 font-bold"> / ${l.previstas}</span></div><div class="h-1.5 w-16 mx-auto mt-1 rounded bg-gray-800 overflow-hidden"><div class="h-1.5 bg-amber-500" style="width:${pct}%"></div></div></td>
       <td class="px-2 py-3 text-center font-black ${l.semVisita ? 'text-red-400' : 'text-gray-600'}">${l.semVisita}</td>
       <td class="px-2 py-3 text-center font-black ${l.adiadas ? 'text-amber-500' : 'text-gray-600'}">${l.adiadas}</td>
@@ -521,10 +543,11 @@ async function carregarResumo() {
   <div class="card p-4">
     <div class="text-[9px] text-gray-500 font-black uppercase mb-3">Ranking · últimos 7 dias</div>
     ${rank.map((r, i) => `<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
-      <span class="text-gray-200 text-sm"><span class="text-amber-500 font-black">${i + 1}º</span> ${esc(r.nome)}</span>
-      <span class="text-xs"><span class="text-amber-500 font-black">${r.pct}%</span> <span class="text-gray-500">${r.f} de ${r.p}</span></span>
+      <span class="text-gray-200 text-sm"><span class="font-black ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-orange-400' : 'text-amber-500'}">${i + 1}º</span> ${esc(r.nome)}</span>
+      <span class="text-xs"><span class="text-amber-500 font-black">${r.pct}%</span> <span class="text-gray-500">${r.f} de ${r.p} · média ${(r.f / 7).toFixed(1)}/dia</span></span>
     </div>`).join('') || '<div class="text-gray-500 text-xs">Sem dados na semana.</div>'}
   </div>`;
+  if (window.lucide) lucide.createIcons();
 }
 
 function renderListaPromotores() {
@@ -533,12 +556,17 @@ function renderListaPromotores() {
     box.innerHTML = '<p class="text-gray-500 text-sm">Nenhum promotor aceitou o convite ainda.</p>';
     return;
   }
-  const ordenados = promotores.filter(p => norm(p.apelido || p.nome).includes(norm(busca))).sort((a, b) => (a.apelido || a.nome || '').localeCompare(b.apelido || b.nome || '', 'pt-BR'));
+  const termo = norm(busca);
+  const ordenados = promotores
+    .filter(p => norm(p.apelido || p.nome).includes(termo) || (p.marcas || []).some(m => norm(m).includes(termo)))
+    .filter(passaFiltro)
+    .sort((a, b) => (a.apelido || a.nome || '').localeCompare(b.apelido || b.nome || '', 'pt-BR'));
+  const cont = $('#contagem-busca'); if (cont) cont.textContent = (busca || filtroPromotor !== 'todos') ? `${ordenados.length} ${ordenados.length === 1 ? 'resultado' : 'resultados'}` : '';
   box.innerHTML = ordenados.map(p => `
-    <div class="card p-4 mb-3 flex items-center gap-2">
+    <div class="card p-4 mb-3 flex items-center gap-2 ${semAgendaHoje(p.uid) ? 'opacity-60' : ''}" data-act="relatorio" data-uid="${esc(p.uid)}">
       <button data-act="relatorio" data-uid="${esc(p.uid)}" class="flex-1 text-left">
         <div class="text-white font-black italic uppercase text-sm">${esc(p.apelido || p.nome || 'Promotor')}</div>
-        <div class="text-gray-500 text-[11px] mt-1">${(p.marcas || []).length ? (p.marcas || []).map(esc).join(' · ') : 'Todas as marcas'}</div>
+        <div class="text-[11px] mt-1">${(p.marcas || []).length ? (p.marcas || []).map((m, i) => `<span style="color:${CORES_MARCA[(norm(m).length + i) % CORES_MARCA.length]}">${esc(m)}</span>`).join(' · ') : '<span class="text-gray-500">Todas as marcas</span>'}</div>
       </button>
       <button data-act="marcas-promotor" data-uid="${esc(p.uid)}" class="p-2 text-amber-500" aria-label="Marcas do promotor"><i data-lucide="tags" class="w-4 h-4"></i></button>
       <button data-act="renomear" data-uid="${esc(p.uid)}" class="p-2 text-amber-500" aria-label="Alterar nome"><i data-lucide="pencil" class="w-4 h-4"></i></button>
@@ -659,7 +687,7 @@ async function salvarMarcasAgencia(nova) {
     await updateDoc(doc(db, 'agencias', user.uid), { marcas: nova });
     perfil.marcas = nova;
     telaMarcasAgencia();
-  } catch (err) { console.error(err); telaMarcasAgencia('Não consegui salvar. Tente de novo.'); }
+  } catch (err) { console.error(err); telaMarcasAgencia('Não foi possível salvar. Verifique a internet e tente de novo.'); }
 }
 
 function telaMarcasPromotor(uid, msg = '') {
@@ -689,7 +717,7 @@ async function salvarMarcasPromotor(e, uid) {
     await updateDoc(doc(db, 'vinculos', email, 'promotores', uid), { marcas: sel });
     p.marcas = sel;
     telaPrincipal();
-  } catch (err) { console.error(err); telaMarcasPromotor(uid, 'Não consegui salvar. Tente de novo.'); }
+  } catch (err) { console.error(err); telaMarcasPromotor(uid, 'Não foi possível salvar. Verifique a internet e tente de novo.'); }
 }
 
 // Pesquisa por voz (navegador)
@@ -908,6 +936,28 @@ async function responderSolicitacao(id, status) {
   } catch (err) { console.error(err); alert('Não consegui responder agora. Tente de novo.'); }
 }
 
+// ---------- apoio da tela principal ----------
+const CORES_MARCA = ['#f59e0b', '#38bdf8', '#4ade80', '#f472b6', '#a78bfa'];
+const semAgendaHoje = (uid) => !!(ultimoResumo && ultimoResumo.ordenados.some(l => l.p.uid === uid && l.ok && l.previstas === 0 && l.adiadas === 0));
+function passaFiltro(p) {
+  if (filtroPromotor === 'todos' || !ultimoResumo) return true;
+  const l = ultimoResumo.ordenados.find(x => x.p.uid === p.uid);
+  if (!l || !l.ok || (l.previstas === 0 && l.adiadas === 0)) return false;
+  const resolvidas = l.feitas + l.semVisita + l.adiadas;
+  if (filtroPromotor === 'pendentes') return resolvidas < l.previstas;
+  if (filtroPromotor === 'semvisita') return l.feitas === 0 && l.semVisita === 0 && l.adiadas === 0;
+  return true;
+}
+function barraCumprimento() {
+  if (!ultimoResumo) return '';
+  const ok = ultimoResumo.ordenados.filter(l => l.ok);
+  const previstas = ok.reduce((t, l) => t + l.previstas, 0);
+  if (!previstas) return '';
+  const resolvidas = ok.reduce((t, l) => t + l.feitas + l.semVisita + l.adiadas, 0);
+  const pct = Math.min(100, Math.round(resolvidas / previstas * 100));
+  return `<div class="card p-3 mb-4"><div class="flex justify-between text-[10px] font-black uppercase text-gray-400 mb-2"><span>Cumprimento da equipe hoje</span><span class="text-amber-500">${pct}%</span></div><div class="h-2 rounded bg-gray-800 overflow-hidden"><div class="h-2 bg-amber-500" style="width:${pct}%"></div></div></div>`;
+}
+
 // ---------- conta: senha, compartilhar e excluir ----------
 async function resetSenha(endereco) {
   if (!endereco) return alert('Não encontrei o e-mail da conta.');
@@ -1107,6 +1157,10 @@ async function abrirRelatorio(uid) {
 
     tela(`
       <button data-act="voltar" class="text-amber-500 text-[11px] font-black uppercase mb-3">← Promotores</button>
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-[10px] text-gray-500">Atualizado às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+        <button data-act="rel-atualizar" class="px-3 py-2 rounded-xl border border-amber-500/60 text-amber-500 text-[10px] font-black uppercase">Atualizar</button>
+      </div>
       <div class="card p-4 mb-3">
         <div class="text-[9px] text-gray-500 font-black uppercase">Promotor</div>
         <div class="text-white font-black text-lg">${esc(p.nome || '')}</div>
@@ -1247,6 +1301,8 @@ document.addEventListener('click', async (e) => {
   else if (act === 'sair') { if (await confirmarTema('Sair da conta?')) { cache = {}; signOut(auth); } }
   else if (act === 'novo-convite') telaConvidar();
   else if (act === 'relatorio') abrirRelatorio(uid);
+  else if (act === 'rel-atualizar') { if (atual) abrirRelatorio(atual); }
+  else if (act === 'filtro-prom') { filtroPromotor = b.dataset.f; telaPrincipal(); }
   else if (act === 'rota') abrirRota(uid);
   else if (act === 'renomear') renomear(uid);
   else if (act === 'planilha') baixarPlanilha(uid);
@@ -1285,3 +1341,16 @@ document.addEventListener('click', async (e) => {
   else if (act === 'mes') { mes = new Date(mes.getFullYear(), mes.getMonth() + Number(b.dataset.n), 1); rotaRender(null); }
   else if (act === 'dia') rotaRender(b.dataset.dia);
 });
+
+
+// Botão "voltar ao topo" quando a lista é longa
+(() => {
+  const b = document.createElement('button');
+  b.id = 'topo-btn';
+  b.setAttribute('aria-label', 'Voltar ao topo');
+  b.textContent = '↑';
+  b.style.cssText = 'position:fixed;right:16px;bottom:96px;z-index:90;width:44px;height:44px;border-radius:9999px;background:#f59e0b;color:#000;font-weight:900;font-size:18px;display:none';
+  b.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.body.appendChild(b);
+  window.addEventListener('scroll', () => { b.style.display = window.scrollY > 400 ? 'block' : 'none'; }, { passive: true });
+})();
